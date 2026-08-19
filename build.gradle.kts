@@ -5,7 +5,7 @@ plugins {
 group = "fr.noxodev"
 version = "1.0.0"
 
-description = "NoxoClaim - Land claiming plugin for Paper"
+description = "NoxoClaim - Système de claims pour Paper 26.1"
 
 repositories {
     mavenCentral()
@@ -13,21 +13,20 @@ repositories {
 }
 
 dependencies {
-    // Paper API 1.21.11
-    compileOnly("io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT")
-
+    // Paper 26.1 — Java 25
+    compileOnly("io.papermc.paper:paper-api:26.1.build.+")
     testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
+        languageVersion.set(JavaLanguageVersion.of(25))
     }
 }
 
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
-    options.release.set(21)
+    options.release.set(25)
 }
 
 tasks.test {
