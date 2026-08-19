@@ -10,6 +10,16 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Paper 26.2
+            paper-api: 26.2.build.+
+          - name: Paper 26.1.2
+            paper-api: 26.1.2.build.+
+
+    name: Build — ${{ matrix.name }}
 
     steps:
       - name: Checkout
@@ -35,10 +45,10 @@ jobs:
           gradle --version
 
       - name: Build and test
-        run: gradle --no-daemon --stacktrace clean test build
+        run: gradle --no-daemon --stacktrace clean test build -PpaperApiVersion="${{ matrix.paper-api }}"
 
       - name: Upload plugin
-        if: success()
+        if: success() && matrix.paper-api == '26.2.build.+'
         uses: actions/upload-artifact@v4
         with:
           name: NoxoClaim
