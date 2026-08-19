@@ -3,7 +3,7 @@ package fr.noxodev.noxoclaim;
 import fr.noxodev.noxoclaim.models.Claim;
 import fr.noxodev.noxoclaim.models.ClaimFlag;
 import org.bukkit.Location;
-import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
@@ -11,12 +11,12 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ClaimTest {
-    private static UUID owner;
-    private static UUID id;
-    private static Claim c;
+    private UUID owner;
+    private UUID id;
+    private Claim c;
 
-    @BeforeAll
-    static void init() {
+    @BeforeEach
+    void init() {
         owner = UUID.randomUUID();
         id = UUID.randomUUID();
         c = new Claim(id, owner, "world", -10, -20, 10, 20);
@@ -36,7 +36,7 @@ class ClaimTest {
     @Test void t12AddMember() { UUID u = UUID.randomUUID(); c.addMember(u); assertTrue(c.isMember(u)); }
     @Test void t13RemoveMember() { UUID u = UUID.randomUUID(); c.addMember(u); c.removeMember(u); assertFalse(c.isMember(u)); }
     @Test void t14FlagDefault() { assertFalse(c.getFlag(ClaimFlag.PVP)); }
-    @Test void t15FlagSet() { assertTrue(c.getFlag(ClaimFlag.PVP)); }
+    @Test void t15FlagSet() { c.setFlag(ClaimFlag.PVP, true); assertTrue(c.getFlag(ClaimFlag.PVP)); }
     @Test void t16EntryDefault() { assertTrue(c.getFlag(ClaimFlag.ENTRY)); }
     @Test void t17NullWorldLocationIsOutside() { assertFalse(c.contains(new Location(null, 0, 0, 0))); }
     @Test void t18Outside() { assertFalse(c.contains(new Location(null, 11, 0, 0))); }
