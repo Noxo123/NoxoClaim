@@ -1,0 +1,3 @@
+package fr.noxodev.noxoclaim.managers;
+import org.bukkit.ChatColor; import org.bukkit.command.CommandSender; import org.bukkit.configuration.file.YamlConfiguration; import java.io.File; import java.util.Map;
+public final class MessageManager { private final YamlConfiguration c; public MessageManager(File folder){c=YamlConfiguration.loadConfiguration(new File(folder,"messages.yml"));} public String get(String k){return ChatColor.translateAlternateColorCodes('&',c.getString(k,k));} public void send(CommandSender s,String k){s.sendMessage(get("prefix")+get(k));} public String format(String k,Map<String,String> v){String x=get(k);for(var e:v.entrySet())x=x.replace("%"+e.getKey()+"%",e.getValue());return x;} }
