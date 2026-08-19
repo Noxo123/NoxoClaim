@@ -1,0 +1,16 @@
+name: NoxoClaim
+version: 1.0.0
+main: fr.noxodev.noxoclaim.NoxoClaim
+api-version: '1.21'
+author: NoxoDEV
+description: Système complet de claims Paper en français.
+commands:
+  claim:
+    description: Gestion des claims
+    usage: /claim <wand|create|delete|info|trust|untrust|flags|list|gui|home|sethome>
+  claimadmin:
+    description: Administration des claims
+    permission: noxoclaim.admin
+permissions:
+  noxoclaim.admin: { default: op }
+  noxoclaim.bypass: { default: op }
