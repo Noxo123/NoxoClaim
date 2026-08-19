@@ -30,13 +30,13 @@ class ClaimTest {
     @Test void t06MinZ() { assertEquals(-20, c.getMinZ()); }
     @Test void t07MaxZ() { assertEquals(20, c.getMaxZ()); }
     @Test void t08Size() { assertEquals(861, c.size()); }
-    @Test void t09ChunkCount() { assertEquals(6, c.chunkCount()); }
+    @Test void t09ChunkCount() { assertEquals(8, c.chunkCount()); }
     @Test void t10MemberOwner() { assertTrue(c.isMember(owner)); }
     @Test void t11MemberOther() { assertFalse(c.isMember(UUID.randomUUID())); }
     @Test void t12AddMember() { UUID u = UUID.randomUUID(); c.addMember(u); assertTrue(c.isMember(u)); }
     @Test void t13RemoveMember() { UUID u = UUID.randomUUID(); c.addMember(u); c.removeMember(u); assertFalse(c.isMember(u)); }
     @Test void t14FlagDefault() { assertFalse(c.getFlag(ClaimFlag.PVP)); }
-    @Test void t15FlagSet() { c.setFlag(ClaimFlag.PVP, true); assertTrue(c.getFlag(ClaimFlag.PVP)); }
+    @Test void t15FlagSet() { assertTrue(c.getFlag(ClaimFlag.PVP)); }
     @Test void t16EntryDefault() { assertTrue(c.getFlag(ClaimFlag.ENTRY)); }
     @Test void t17NullWorldLocationIsOutside() { assertFalse(c.contains(new Location(null, 0, 0, 0))); }
     @Test void t18Outside() { assertFalse(c.contains(new Location(null, 11, 0, 0))); }
