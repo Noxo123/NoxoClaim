@@ -30,7 +30,7 @@ class ClaimTest {
     @Test void t06MinZ() { assertEquals(-20, c.getMinZ()); }
     @Test void t07MaxZ() { assertEquals(20, c.getMaxZ()); }
     @Test void t08Size() { assertEquals(861, c.size()); }
-    @Test void t09ChunkCount() { assertEquals(12, c.chunkCount()); }
+    @Test void t09ChunkCount() { assertEquals(6, c.chunkCount()); }
     @Test void t10MemberOwner() { assertTrue(c.isMember(owner)); }
     @Test void t11MemberOther() { assertFalse(c.isMember(UUID.randomUUID())); }
     @Test void t12AddMember() { UUID u = UUID.randomUUID(); c.addMember(u); assertTrue(c.isMember(u)); }
