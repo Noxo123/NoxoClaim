@@ -1,7 +1,7 @@
 name: NoxoClaim
 version: 1.0.0
 main: fr.noxodev.noxoclaim.NoxoClaim
-api-version: '1.21'
+api-version: '26.1'
 author: NoxoDEV
 description: Système complet de claims Paper en français.
 commands:
