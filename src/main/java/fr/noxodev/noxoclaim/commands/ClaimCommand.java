@@ -35,7 +35,8 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
     }
 
     private void wand(Player x) {
-        ItemStackBuilder.giveWand(p, x);
+        org.bukkit.inventory.ItemStack i = new org.bukkit.inventory.ItemStack(Material.valueOf(p.getConfig().getString("wand.material", "GOLDEN_SHOVEL")));
+        var m = i.getItemMeta(); m.setDisplayName("§bWand de claim"); i.setItemMeta(m); x.getInventory().addItem(i);
         p.messages().send(x, "wand-given");
     }
 
@@ -98,7 +99,7 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
     private void sethome(Player x) {
         Claim c = p.claims().at(x.getLocation()); if (c == null) { p.messages().send(x, "not-found"); return; }
         if (!c.getOwner().equals(x.getUniqueId())) { p.messages().send(x, "not-owner"); return; }
-        c.setHome(x.getLocation()); p.claims().save(); p.messages().send(x, "home-set");
+        c.setHome(x.getLocation()); p.claims().save(); x.sendMessage(p.messages().get("prefix") + p.messages().format("home-set", Map.of("name", c.getName())));
     }
 
     private void home(Player x) {
@@ -127,18 +128,12 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
 
     public List<String> onTabComplete(CommandSender s, Command c, String a, String[] args) {
         if (c.getName().equalsIgnoreCase("chome")) {
-            if (args.length == 1) return p.claims().owned(((Player)s).getUniqueId()).stream().map(Claim::getName).toList();
+            if (!(s instanceof Player player)) return List.of();
+            if (args.length == 1) return p.claims().owned(player.getUniqueId()).stream().map(Claim::getName).toList();
             return List.of();
         }
         if (args.length == 1) return List.of("wand","create","delete","info","trust","untrust","flags","list","gui","home","sethome");
         if (args.length == 2 && args[0].equalsIgnoreCase("flags")) return Arrays.stream(ClaimFlag.values()).map(Enum::name).toList();
         return List.of();
-    }
-
-    private static final class ItemStackBuilder {
-        static void giveWand(NoxoClaim p, Player x) {
-            org.bukkit.inventory.ItemStack i = new org.bukkit.inventory.ItemStack(Material.valueOf(p.getConfig().getString("wand.material", "GOLDEN_SHOVEL")));
-            var m = i.getItemMeta(); m.setDisplayName("§bWand de claim"); i.setItemMeta(m); x.getInventory().addItem(i);
-        }
     }
 }
