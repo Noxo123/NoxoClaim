@@ -9,12 +9,15 @@ description = "NoxoClaim - Système de claims pour Paper 26.1"
 
 repositories {
     mavenCentral()
-    maven("https://repo.papermc.io/repository/maven-public/")
+    maven {
+        name = "papermc"
+        url = uri("https://repo.papermc.io/repository/maven-public/")
+    }
 }
 
 dependencies {
-    // Paper 26.1 — Java 25
-    compileOnly("io.papermc.paper:paper-api:26.1.build.+")
+    // Paper 26.1.1 API — Java 25
+    compileOnly("io.papermc.paper:paper-api:26.1.1.build.+")
     testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
 }
 
