@@ -15,11 +15,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Setup Java 25
+      # Gradle 8.14.x cannot run on Java 25 (Java 25 runtime support starts
+      # with Gradle 9.1). We therefore run Gradle itself on Java 24 and let
+      # the Java toolchain compile/test the plugin with Java 25.
+      - name: Setup Java 24 for Gradle
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '24'
+
+      - name: Setup Java 25 toolchain
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
+
+      - name: Select Java 24 as Gradle runtime
+        shell: bash
+        run: |
+          JAVA24_HOME=$(find "$RUNNER_TOOL_CACHE/Java_Temurin-Hotspot_jdk" -maxdepth 1 -type d -name '24.*' | sort -V | tail -n 1)
+          if [ -z "$JAVA24_HOME" ]; then
+            echo "Java 24 installation not found"
+            exit 1
+          fi
+          echo "JAVA_HOME=$JAVA24_HOME" >> "$GITHUB_ENV"
+          echo "$JAVA24_HOME/bin" >> "$GITHUB_PATH"
+          echo "Gradle runtime: $JAVA24_HOME"
+          "$JAVA24_HOME/bin/java" -version
 
       - name: Setup Gradle 8.14.3
         uses: gradle/actions/setup-gradle@v5
