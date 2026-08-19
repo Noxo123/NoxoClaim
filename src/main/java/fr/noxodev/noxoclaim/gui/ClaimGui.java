@@ -5,7 +5,6 @@ import fr.noxodev.noxoclaim.commands.ClaimCommand;
 import fr.noxodev.noxoclaim.models.Claim;
 import fr.noxodev.noxoclaim.models.ClaimFlag;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -26,7 +25,6 @@ public final class ClaimGui implements Listener {
     private static final String HELP = "§8§lNoxoClaim §7• Aide";
 
     private final NoxoClaim plugin;
-    private final Map<UUID, String> pendingNames = new HashMap<>();
     private final Map<UUID, Claim> flagClaims = new HashMap<>();
 
     public ClaimGui(NoxoClaim plugin) {
@@ -77,6 +75,7 @@ public final class ClaimGui implements Listener {
     }
 
     public void openFlags(Player player, Claim claim) {
+        if (claim == null) return;
         flagClaims.put(player.getUniqueId(), claim);
         Inventory inv = Bukkit.createInventory(null, 45, FLAGS);
         fill(inv, Material.GRAY_STAINED_GLASS_PANE, " ");
@@ -97,7 +96,7 @@ public final class ClaimGui implements Listener {
         button(inv, 11, Material.COMPASS, "§b§lComment créer ?", "§71. Clique sur Créer mon claim", "§72. Choisis Petit, Moyen ou Grand", "§73. Le terrain est créé autour de toi", "", "§aAucune coordonnée nécessaire.");
         button(inv, 15, Material.GOLDEN_SHOVEL, "§d§lTerrain personnalisé", "§7Pour une forme précise :", "§7utilise l'outil NoxoClaim.", "§7Clic gauche = coin 1", "§7Clic droit = coin 2");
         button(inv, 22, Material.SHIELD, "§6§lProtections", "§7Ouvre ton claim puis Protection", "§7pour activer/désactiver PvP, feu,", "§7explosions et grief des mobs.");
-        button(inv, 29, Material.PLAYER_HEAD, "§a§lMembres", "§7Utilise le menu pour gérer", "§7les joueurs autorisés.");
+        button(inv, 29, Material.PLAYER_HEAD, "§a§lMembres", "§7Utilise les commandes /claim trust", "§7et /claim untrust pour les gérer.");
         button(inv, 40, Material.ARROW, "§fRetour", "§7Retour au menu.");
         player.openInventory(inv);
     }
@@ -153,8 +152,9 @@ public final class ClaimGui implements Listener {
             else if (slot == 16) create(player, 128, "Grand terrain");
             else if (slot == 22) {
                 player.closeInventory();
-                ClaimCommand command = (ClaimCommand) plugin.getCommand("claim").getExecutor();
-                if (command != null) player.performCommand("claim wand");
+                if (plugin.getCommand("claim") != null && plugin.getCommand("claim").getExecutor() instanceof ClaimCommand) {
+                    player.performCommand("claim wand");
+                }
                 player.sendMessage("§b§lNoxoClaim §8» §fClique gauche sur le premier coin puis clic droit sur le deuxième.");
                 player.sendMessage("§7Ensuite utilise §f/claim create§7 pour finaliser.");
             } else if (slot == 40) openMain(player);
@@ -198,8 +198,11 @@ public final class ClaimGui implements Listener {
 
     private void create(Player player, int size, String name) {
         player.closeInventory();
-        ClaimCommand command = (ClaimCommand) plugin.getCommand("claim").getExecutor();
-        if (command == null || !command.createCentered(player, size, size, name)) return;
+        if (plugin.getCommand("claim") == null || !(plugin.getCommand("claim").getExecutor() instanceof ClaimCommand command)) {
+            player.sendMessage("§cNoxoClaim n'est pas correctement chargé.");
+            return;
+        }
+        command.createCentered(player, size, size, name);
     }
 
     private static final class LocationHolder {
