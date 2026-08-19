@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "fr.noxodev"
-version = "1.1.2"
+version = "1.1.3"
 description = "NoxoClaim - claims par chunks pour Paper 26.2 et 26.1"
 
 repositories {
@@ -13,13 +13,12 @@ repositories {
 }
 
 val paperApiVersion = providers.gradleProperty("paperApiVersion").orElse("26.2.build.+")
+val paperApi = "io.papermc.paper:paper-api:${paperApiVersion.get()}"
 
 dependencies {
-    // Paper 26.2 par défaut. Le CI peut compiler aussi contre Paper 26.1.2.
-    compileOnly("io.papermc.paper:paper-api:${paperApiVersion.get()}")
+    compileOnly(paperApi)
+    testImplementation(paperApi)
 
-    // VaultAPI 1.7 déclare une vieille dépendance Bukkit (1.13.1) qui entre
-    // en conflit avec Paper 26.x. Bukkit/Paper est déjà fourni par Paper.
     compileOnly("com.github.MilkBowl:VaultAPI:1.7") {
         exclude(group = "org.bukkit", module = "bukkit")
     }
