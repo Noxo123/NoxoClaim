@@ -1,17 +1,17 @@
 name: NoxoClaim
-version: 1.1.2
+version: 1.2.0
 main: fr.noxodev.noxoclaim.NoxoClaim
 api-version: '26.1'
 author: NoxoDEV
-description: Système de claims par chunks pour Paper 26.1 et 26.2.
+description: Système de claims simple et moderne pour Paper 26.1 et 26.2.
 softdepend:
   - Vault
 commands:
   claim:
-    description: Gestion des claims
-    usage: /claim <wand|create|delete|info|trust|untrust|flags|list|gui|home|sethome>
+    description: Ouvre le menu NoxoClaim
+    usage: /claim
   chome:
-    description: Se téléporter à un claim nommé
+    description: Ouvre tes claims et téléporte vers un claim nommé
     usage: /chome <nom|list>
   claimadmin:
     description: Administration des claims
