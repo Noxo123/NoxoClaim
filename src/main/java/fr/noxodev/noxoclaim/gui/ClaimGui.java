@@ -3,87 +3,216 @@ package fr.noxodev.noxoclaim.gui;
 import fr.noxodev.noxoclaim.NoxoClaim;
 import fr.noxodev.noxoclaim.commands.ClaimCommand;
 import fr.noxodev.noxoclaim.models.Claim;
-import org.bukkit.*;
+import fr.noxodev.noxoclaim.models.ClaimFlag;
+import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
+import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.event.*;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.inventory.*;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+
 import java.util.*;
 
+/** Simple player-first GUI. Players never need WorldEdit or coordinates. */
 public final class ClaimGui implements Listener {
-    private static final String TITLE = "§8NoxoClaim §7• Carte";
-    private final NoxoClaim p;
-    private final Map<UUID, MapState> states = new HashMap<>();
-    private final Map<Integer, int[]> slots = new HashMap<>();
+    private static final String MAIN = "§8§lNoxoClaim §7• Menu";
+    private static final String CREATE = "§8§lNoxoClaim §7• Créer";
+    private static final String CLAIMS = "§8§lNoxoClaim §7• Mes claims";
+    private static final String FLAGS = "§8§lNoxoClaim §7• Protection";
+    private static final String HELP = "§8§lNoxoClaim §7• Aide";
 
-    public ClaimGui(NoxoClaim p) { this.p = p; p.getServer().getPluginManager().registerEvents(this, p); }
+    private final NoxoClaim plugin;
+    private final Map<UUID, String> pendingNames = new HashMap<>();
+    private final Map<UUID, Claim> flagClaims = new HashMap<>();
 
-    public void open(Player player, String name) {
-        MapState state = states.computeIfAbsent(player.getUniqueId(), u -> new MapState());
-        state.name = name;
-        state.anchor = null; state.end = null;
-        draw(player, state);
+    public ClaimGui(NoxoClaim plugin) {
+        this.plugin = plugin;
+        plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
-    private void draw(Player player, MapState state) {
-        Inventory inv = Bukkit.createInventory(null, 54, TITLE);
-        Chunk center = player.getLocation().getChunk();
-        for (int row = 0; row < 5; row++) for (int col = 0; col < 5; col++) {
-            int cx = center.getX() + col - 2, cz = center.getZ() + row - 2, slot = 10 + row * 9 + col;
-            slots.put(slot, new int[]{cx, cz});
-            Claim claim = p.claims().atChunk(player.getWorld().getName(), cx, cz);
-            boolean selected = state.anchor != null && state.end != null && cx >= Math.min(state.anchor[0], state.end[0]) && cx <= Math.max(state.anchor[0], state.end[0]) && cz >= Math.min(state.anchor[1], state.end[1]) && cz <= Math.max(state.anchor[1], state.end[1]);
-            if (selected && claim == null) item(inv, slot, Material.YELLOW_CONCRETE, "§eChunk sélectionné", List.of("§7Cliquez sur Confirmer pour acheter."));
-            else if (claim != null && claim.getOwner().equals(player.getUniqueId())) item(inv, slot, Material.LIME_CONCRETE, "§aÀ vous §f• " + claim.getName(), List.of("§7Cliquez pour vous téléporter."));
-            else if (claim != null) item(inv, slot, Material.RED_CONCRETE, "§cOccupé", List.of("§7Ce chunk appartient à un autre joueur."));
-            else item(inv, slot, Material.GRAY_CONCRETE, "§7Libre", List.of("§7Cliquez pour sélectionner ce chunk."));
-        }
-        item(inv, 45, Material.PAPER, "§bNom : §f" + state.name, List.of("§7Nom utilisé lors de l'achat."));
-        long chunks = state.anchor != null && state.end != null ? ((long)Math.abs(state.end[0] - state.anchor[0]) + 1) * ((long)Math.abs(state.end[1] - state.anchor[1]) + 1) : 0;
-        double cost = chunks * p.chunkPrice();
-        item(inv, 49, Material.GOLD_INGOT, "§6Prix : §f" + p.formatMoney(cost), List.of("§7" + chunks + " chunk(s)", "§7Prix : " + p.formatMoney(p.chunkPrice()) + " / chunk"));
-        item(inv, 53, Material.EMERALD_BLOCK, "§aConfirmer l'achat", List.of("§7Achat de " + chunks + " chunk(s)", "§7Nom : " + state.name));
-        item(inv, 48, Material.BARRIER, "§cAnnuler", List.of("§7Fermer la carte"));
+    public void openMain(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 45, MAIN);
+        fill(inv, Material.GRAY_STAINED_GLASS_PANE, " ");
+        button(inv, 10, Material.GRASS_BLOCK, "§a§lCréer mon claim", "§7Crée un terrain automatiquement", "§7autour de ta position.", "", "§eClique pour choisir une taille.");
+        button(inv, 13, Material.BOOK, "§b§lMes claims", "§7Voir et gérer tes terrains.");
+        button(inv, 16, Material.SHIELD, "§6§lProtection", "§7Modifier les protections du claim actuel.");
+        button(inv, 31, Material.COMPASS, "§d§lCarte", "§7Voir les claims autour de toi.");
+        button(inv, 33, Material.PAPER, "§f§lAide", "§7Tout est expliqué ici.");
+        button(inv, 40, Material.BARRIER, "§c§lFermer", "§7Fermer le menu.");
         player.openInventory(inv);
     }
 
-    private void item(Inventory inv, int slot, Material mat, String name, List<String> lore) {
-        ItemStack i = new ItemStack(mat); ItemMeta m = i.getItemMeta(); m.setDisplayName(name); m.setLore(lore); i.setItemMeta(m); inv.setItem(slot, i);
+    public void openCreate(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 45, CREATE);
+        fill(inv, Material.BLACK_STAINED_GLASS_PANE, " ");
+        button(inv, 10, Material.OAK_PLANKS, "§a§lPetit", "§732 × 32 blocs", "§7Simple pour une petite maison.", "", "§eClique pour créer.");
+        button(inv, 13, Material.BRICKS, "§b§lMoyen", "§764 × 64 blocs", "§7Parfait pour une base.", "", "§eClique pour créer.");
+        button(inv, 16, Material.QUARTZ_BLOCK, "§6§lGrand", "§7128 × 128 blocs", "§7Pour une grosse base.", "", "§eClique pour créer.");
+        button(inv, 22, Material.GOLDEN_SHOVEL, "§d§lPersonnalisé", "§7Sélectionne deux coins avec", "§7l'outil NoxoClaim.", "", "§ePas besoin de WorldEdit.");
+        button(inv, 40, Material.ARROW, "§fRetour", "§7Retour au menu.");
+        button(inv, 44, Material.BARRIER, "§cFermer", "§7Fermer le menu.");
+        player.openInventory(inv);
     }
+
+    public void openClaims(Player player) {
+        List<Claim> claims = plugin.claims().owned(player.getUniqueId());
+        Inventory inv = Bukkit.createInventory(null, 54, CLAIMS);
+        fill(inv, Material.GRAY_STAINED_GLASS_PANE, " ");
+        if (claims.isEmpty()) {
+            button(inv, 22, Material.BARRIER, "§c§lAucun claim", "§7Tu n'as encore aucun terrain.", "", "§eRetourne au menu pour en créer un.");
+        } else {
+            int slot = 10;
+            for (Claim claim : claims) {
+                if (slot >= 44) break;
+                button(inv, slot++, Material.LIME_WOOL, "§a§l" + claim.getName(), "§7Taille : §f" + claim.size() + " blocs", "§7Chunks : §f" + claim.chunkCount(), "§7Membres : §f" + claim.getMembers().size(), "", "§eClique pour te téléporter.");
+            }
+        }
+        button(inv, 49, Material.ARROW, "§fRetour", "§7Retour au menu.");
+        button(inv, 53, Material.BARRIER, "§cFermer", "§7Fermer le menu.");
+        player.openInventory(inv);
+    }
+
+    public void openFlags(Player player, Claim claim) {
+        flagClaims.put(player.getUniqueId(), claim);
+        Inventory inv = Bukkit.createInventory(null, 45, FLAGS);
+        fill(inv, Material.GRAY_STAINED_GLASS_PANE, " ");
+        button(inv, 10, claim.getFlag(ClaimFlag.PVP) ? Material.LIME_DYE : Material.GRAY_DYE, "§c⚔ PvP", state(claim.getFlag(ClaimFlag.PVP)));
+        button(inv, 12, claim.getFlag(ClaimFlag.FIRE) ? Material.LIME_DYE : Material.GRAY_DYE, "§6🔥 Feu", state(claim.getFlag(ClaimFlag.FIRE)));
+        button(inv, 14, claim.getFlag(ClaimFlag.EXPLOSIONS) ? Material.LIME_DYE : Material.GRAY_DYE, "§e💥 Explosions", state(claim.getFlag(ClaimFlag.EXPLOSIONS)));
+        button(inv, 16, claim.getFlag(ClaimFlag.MOB_GRIEFING) ? Material.LIME_DYE : Material.GRAY_DYE, "§5👹 Grief des mobs", state(claim.getFlag(ClaimFlag.MOB_GRIEFING)));
+        button(inv, 22, claim.getFlag(ClaimFlag.ENTRY) ? Material.LIME_DYE : Material.GRAY_DYE, "§b🚪 Entrée", state(claim.getFlag(ClaimFlag.ENTRY)));
+        button(inv, 40, Material.ARROW, "§fRetour", "§7Retour au menu.");
+        player.openInventory(inv);
+    }
+
+    public void openCreateMap(Player player) { openCreate(player); }
+
+    public void openHelp(Player player) {
+        Inventory inv = Bukkit.createInventory(null, 45, HELP);
+        fill(inv, Material.BLACK_STAINED_GLASS_PANE, " ");
+        button(inv, 11, Material.COMPASS, "§b§lComment créer ?", "§71. Clique sur Créer mon claim", "§72. Choisis Petit, Moyen ou Grand", "§73. Le terrain est créé autour de toi", "", "§aAucune coordonnée nécessaire.");
+        button(inv, 15, Material.GOLDEN_SHOVEL, "§d§lTerrain personnalisé", "§7Pour une forme précise :", "§7utilise l'outil NoxoClaim.", "§7Clic gauche = coin 1", "§7Clic droit = coin 2");
+        button(inv, 22, Material.SHIELD, "§6§lProtections", "§7Ouvre ton claim puis Protection", "§7pour activer/désactiver PvP, feu,", "§7explosions et grief des mobs.");
+        button(inv, 29, Material.PLAYER_HEAD, "§a§lMembres", "§7Utilise le menu pour gérer", "§7les joueurs autorisés.");
+        button(inv, 40, Material.ARROW, "§fRetour", "§7Retour au menu.");
+        player.openInventory(inv);
+    }
+
+    private String state(boolean enabled) { return enabled ? "§aActivé" : "§cDésactivé"; }
+
+    private void fill(Inventory inv, Material material, String name) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) { meta.setDisplayName(name); item.setItemMeta(meta); }
+        for (int i = 0; i < inv.getSize(); i++) if (inv.getItem(i) == null) inv.setItem(i, item.clone());
+    }
+
+    private void button(Inventory inv, int slot, Material material, String name, String... lore) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(name);
+            meta.setLore(Arrays.asList(lore));
+            item.setItemMeta(meta);
+        }
+        inv.setItem(slot, item);
+    }
+
+    private boolean isTitle(String title) { return title.equals(MAIN) || title.equals(CREATE) || title.equals(CLAIMS) || title.equals(FLAGS) || title.equals(HELP); }
 
     @EventHandler
-    public void click(InventoryClickEvent e) {
-        if (!e.getView().getTitle().equals(TITLE) || !(e.getWhoClicked() instanceof Player player)) return;
-        e.setCancelled(true);
-        MapState state = states.computeIfAbsent(player.getUniqueId(), u -> new MapState());
-        if (e.getRawSlot() == 48) { player.closeInventory(); return; }
-        if (e.getRawSlot() == 53) {
-            if (state.anchor == null || state.end == null) { player.sendMessage("§cSélectionnez d'abord deux chunks."); return; }
-            int minX = Math.min(state.anchor[0], state.end[0]), maxX = Math.max(state.anchor[0], state.end[0]);
-            int minZ = Math.min(state.anchor[1], state.end[1]), maxZ = Math.max(state.anchor[1], state.end[1]);
-            if (((long)maxX - minX + 1) * ((long)maxZ - minZ + 1) > p.getConfig().getLong("claim.max-chunks-per-purchase", 100)) { player.sendMessage("§cTrop de chunks sélectionnés."); return; }
-            if (((ClaimCommand)p.getCommand("claim").getExecutor()).createChunks(player, minX, minZ, maxX, maxZ, state.name)) player.closeInventory();
-            else draw(player, state);
+    public void click(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+        if (!isTitle(event.getView().getTitle())) return;
+        event.setCancelled(true);
+        int slot = event.getRawSlot();
+        if (slot < 0 || slot >= event.getView().getTopInventory().getSize()) return;
+
+        String title = event.getView().getTitle();
+        if (title.equals(MAIN)) {
+            if (slot == 10) openCreate(player);
+            else if (slot == 13) openClaims(player);
+            else if (slot == 16) {
+                Claim claim = plugin.claims().at(player.getLocation());
+                if (claim == null) player.sendMessage("§c§lNoxoClaim §8» §fTu n'es pas dans ton claim.");
+                else if (!claim.getOwner().equals(player.getUniqueId())) player.sendMessage("§c§lNoxoClaim §8» §fTu n'es pas propriétaire de ce claim.");
+                else openFlags(player, claim);
+            } else if (slot == 31) openCreateMap(player);
+            else if (slot == 33) openHelp(player);
+            else if (slot == 40) player.closeInventory();
             return;
         }
-        int[] pos = slots.get(e.getRawSlot());
-        if (pos == null) return;
-        Claim claim = p.claims().atChunk(player.getWorld().getName(), pos[0], pos[1]);
-        if (claim != null) {
-            if (claim.getOwner().equals(player.getUniqueId())) {
-                Location target = claim.getHome();
-                if (target == null) target = new Location(player.getWorld(), pos[0] * 16 + 8.5, player.getWorld().getHighestBlockYAt(pos[0] * 16 + 8, pos[1] * 16 + 8) + 1, pos[1] * 16 + 8.5);
+
+        if (title.equals(CREATE)) {
+            if (slot == 10) create(player, 32, "Maison");
+            else if (slot == 13) create(player, 64, "Base");
+            else if (slot == 16) create(player, 128, "Grand terrain");
+            else if (slot == 22) {
                 player.closeInventory();
-                new fr.noxodev.noxoclaim.utils.TeleportTask(p, player, target, p.getConfig().getInt("teleport.delay-seconds", 3), p.getConfig().getBoolean("teleport.cancel-on-move", true));
-            } else player.sendMessage("§cCe chunk est déjà occupé.");
+                ClaimCommand command = (ClaimCommand) plugin.getCommand("claim").getExecutor();
+                if (command != null) player.performCommand("claim wand");
+                player.sendMessage("§b§lNoxoClaim §8» §fClique gauche sur le premier coin puis clic droit sur le deuxième.");
+                player.sendMessage("§7Ensuite utilise §f/claim create§7 pour finaliser.");
+            } else if (slot == 40) openMain(player);
+            else if (slot == 44) player.closeInventory();
             return;
         }
-        if (state.anchor == null) state.anchor = pos;
-        else if (state.end == null) state.end = pos;
-        else state.end = pos;
-        draw(player, state);
+
+        if (title.equals(CLAIMS)) {
+            if (slot == 49) { openMain(player); return; }
+            if (slot == 53) { player.closeInventory(); return; }
+            List<Claim> claims = plugin.claims().owned(player.getUniqueId());
+            int index = slot - 10;
+            if (index >= 0 && index < claims.size() && slot < 44) {
+                Claim claim = claims.get(index);
+                player.closeInventory();
+                LocationHolder.teleport(player, claim, plugin);
+            }
+            return;
+        }
+
+        if (title.equals(FLAGS)) {
+            Claim claim = flagClaims.get(player.getUniqueId());
+            if (claim == null || !claim.getOwner().equals(player.getUniqueId())) { openMain(player); return; }
+            ClaimFlag flag = switch (slot) {
+                case 10 -> ClaimFlag.PVP;
+                case 12 -> ClaimFlag.FIRE;
+                case 14 -> ClaimFlag.EXPLOSIONS;
+                case 16 -> ClaimFlag.MOB_GRIEFING;
+                case 22 -> ClaimFlag.ENTRY;
+                default -> null;
+            };
+            if (flag != null) { claim.setFlag(flag, !claim.getFlag(flag)); plugin.claims().save(); openFlags(player, claim); }
+            else if (slot == 40) openMain(player);
+            return;
+        }
+
+        if (title.equals(HELP)) {
+            if (slot == 40) openMain(player);
+        }
     }
 
-    private static final class MapState { String name = "mon-claim"; int[] anchor, end; }
+    private void create(Player player, int size, String name) {
+        player.closeInventory();
+        ClaimCommand command = (ClaimCommand) plugin.getCommand("claim").getExecutor();
+        if (command == null || !command.createCentered(player, size, size, name)) return;
+    }
+
+    private static final class LocationHolder {
+        private static void teleport(Player player, Claim claim, NoxoClaim plugin) {
+            org.bukkit.Location target = claim.getHome();
+            if (target == null) {
+                org.bukkit.World world = Bukkit.getWorld(claim.getWorld());
+                if (world == null) return;
+                int x = claim.getMinX() + (claim.getMaxX() - claim.getMinX()) / 2;
+                int z = claim.getMinZ() + (claim.getMaxZ() - claim.getMinZ()) / 2;
+                target = new org.bukkit.Location(world, x + .5, world.getHighestBlockYAt(x, z) + 1, z + .5);
+            }
+            new fr.noxodev.noxoclaim.utils.TeleportTask(plugin, player, target, plugin.getConfig().getInt("teleport.delay-seconds", 3), plugin.getConfig().getBoolean("teleport.cancel-on-move", true));
+        }
+    }
 }
