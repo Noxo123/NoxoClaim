@@ -1,9 +1,9 @@
 name: NoxoClaim
-version: 1.3.0
+version: 1.3.1
 main: fr.noxodev.noxoclaim.NoxoClaim
 api-version: '26.1'
 author: NoxoDEV
-description: Système de claims simple par chunks pour Paper 26.1 et 26.2.
+description: Système de claims par chunks pour Paper 26.1 et 26.2.
 softdepend:
   - Vault
 commands:

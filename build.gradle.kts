@@ -3,8 +3,8 @@ plugins {
 }
 
 group = "fr.noxodev"
-version = "1.1.4"
-description = "NoxoClaim - claims par chunks pour Paper 26.2 et 26.1"
+version = "1.3.1"
+description = "NoxoClaim - système de claims par chunks pour Paper 26.1 et 26.2"
 
 repositories {
     mavenCentral()
