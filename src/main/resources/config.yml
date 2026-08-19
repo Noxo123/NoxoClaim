@@ -2,6 +2,7 @@ claim:
   max-per-player: 10
   min-size: 25
   max-size: 1000000
+  max-chunks-per-purchase: 100
   default-flags:
     pvp: false
     explosions: false
@@ -10,6 +11,8 @@ claim:
     entry: true
 wand:
   material: GOLDEN_SHOVEL
+economy:
+  cost-per-chunk: 500.0
 teleport:
   delay-seconds: 3
   cancel-on-move: true
