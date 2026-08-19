@@ -15,42 +15,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      # Gradle 8.14.x cannot run on Java 25 (Java 25 runtime support starts
-      # with Gradle 9.1). We therefore run Gradle itself on Java 24 and let
-      # the Java toolchain compile/test the plugin with Java 25.
-      - name: Setup Java 24 for Gradle
+      # Gradle 8.14.x cannot run on Java 25 (class-file major 69).
+      # Java 24 runs Gradle; Java 25 remains the compilation toolchain.
+      - name: Setup Java 24 (Gradle runtime)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '24'
+          architecture: x64
 
-      - name: Setup Java 25 toolchain
+      - name: Setup Java 25 (compilation toolchain)
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '25'
+          architecture: x64
 
-      - name: Select Java 24 as Gradle runtime
+      - name: Run Gradle with Java 24
         shell: bash
         run: |
-          JAVA24_HOME=$(find "$RUNNER_TOOL_CACHE/Java_Temurin-Hotspot_jdk" -maxdepth 1 -type d -name '24.*' | sort -V | tail -n 1)
-          if [ -z "$JAVA24_HOME" ]; then
-            echo "Java 24 installation not found"
-            exit 1
-          fi
-          echo "JAVA_HOME=$JAVA24_HOME" >> "$GITHUB_ENV"
-          echo "$JAVA24_HOME/bin" >> "$GITHUB_PATH"
-          echo "Gradle runtime: $JAVA24_HOME"
-          "$JAVA24_HOME/bin/java" -version
-
-      - name: Setup Gradle 8.14.3
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: '8.14.3'
-          validate-wrappers: false
-
-      - name: Build and test
-        run: gradle --no-daemon clean test build
+          export JAVA_HOME="$JAVA_HOME_24_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          echo "Gradle runtime: $JAVA_HOME"
+          "$JAVA_HOME/bin/java" -version
+          gradle --no-daemon clean test build
 
       - name: Upload plugin
         uses: actions/upload-artifact@v4
