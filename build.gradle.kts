@@ -3,7 +3,7 @@ plugins {
 }
 
 group = "fr.noxodev"
-version = "1.1.0"
+version = "1.1.1"
 description = "NoxoClaim - claims par chunks pour Paper 26.2 et 26.1"
 
 repositories {
@@ -13,7 +13,8 @@ repositories {
 }
 
 dependencies {
-    compileOnly("io.papermc.paper:paper-api:26.2.1.build.+")
+    // Paper 26.2 : format officiel {VERSION}.build.+
+    compileOnly("io.papermc.paper:paper-api:26.2.build.+")
     compileOnly("com.github.MilkBowl:VaultAPI:1.7")
     testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
 }
