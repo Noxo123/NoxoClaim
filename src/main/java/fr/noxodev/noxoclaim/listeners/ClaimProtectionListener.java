@@ -11,15 +11,15 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockBurnEvent;
 import org.bukkit.event.block.BlockFromToEvent;
-import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
-import org.bukkit.event.entity.CreatureSpawnEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 
 public final class ClaimProtectionListener implements Listener {
     private final NoxoClaim plugin;
@@ -36,13 +36,9 @@ public final class ClaimProtectionListener implements Listener {
         return player.hasPermission("noxoclaim.bypass");
     }
 
-    private boolean member(Player player, Claim claim) {
-        return claim != null && claim.isMember(player.getUniqueId());
-    }
-
     private boolean allowed(Player player, org.bukkit.Location location) {
         Claim claim = claimAt(location);
-        return claim == null || bypass(player) || member(player, claim);
+        return claim == null || bypass(player) || claim.isMember(player.getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -58,10 +54,6 @@ public final class ClaimProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void interact(PlayerInteractEvent event) {
         if (event.getClickedBlock() != null && !allowed(event.getPlayer(), event.getClickedBlock().getLocation())) {
-            event.setCancelled(true);
-            return;
-        }
-        if (event.getItem() != null && event.getClickedBlock() == null && !allowed(event.getPlayer(), event.getPlayer().getLocation())) {
             event.setCancelled(true);
         }
     }
@@ -88,9 +80,10 @@ public final class ClaimProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void explode(EntityExplodeEvent event) {
-        Claim claim = claimAt(event.getLocation());
-        if (claim == null || claim.getFlag(ClaimFlag.EXPLOSIONS)) return;
-        event.blockList().removeIf(block -> claimAt(block.getLocation()) == claim);
+        event.blockList().removeIf(block -> {
+            Claim claim = claimAt(block.getLocation());
+            return claim != null && !claim.getFlag(ClaimFlag.EXPLOSIONS);
+        });
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -115,13 +108,21 @@ public final class ClaimProtectionListener implements Listener {
     public void fluidFlow(BlockFromToEvent event) {
         Claim source = claimAt(event.getBlock().getLocation());
         Claim destination = claimAt(event.getToBlock().getLocation());
-        if (destination != null && destination != source && !destination.getFlag(ClaimFlag.ENTRY)) {
-            event.setCancelled(true);
-        }
+        if (destination != null && destination != source && source == null) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void creatureSpawn(CreatureSpawnEvent event) {
-        // No gameplay restriction here: MOB_GRIEFING controls block changes, not natural spawning.
+    public void entry(PlayerMoveEvent event) {
+        if (event.getTo() == null) return;
+        if (event.getFrom().getBlockX() == event.getTo().getBlockX()
+                && event.getFrom().getBlockY() == event.getTo().getBlockY()
+                && event.getFrom().getBlockZ() == event.getTo().getBlockZ()
+                && event.getFrom().getWorld() == event.getTo().getWorld()) return;
+
+        Claim destination = claimAt(event.getTo());
+        if (destination != null && !destination.getFlag(ClaimFlag.ENTRY)
+                && !bypass(event.getPlayer()) && !destination.isMember(event.getPlayer().getUniqueId())) {
+            event.setTo(event.getFrom());
+        }
     }
 }
