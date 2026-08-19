@@ -84,12 +84,6 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
             return false;
         }
 
-        int minX = chunkX * 16;
-        int minZ = chunkZ * 16;
-        int maxX = minX + 15;
-        int maxZ = minZ + 15;
-        Claim claim = new Claim(UUID.randomUUID(), player.getUniqueId(), world, minX, minZ, maxX, maxZ, "Chunk " + chunkX + ", " + chunkZ);
-
         if (plugin.claims().owned(player.getUniqueId()).size() >= plugin.getConfig().getInt("claim.max-per-player", 10)) {
             plugin.messages().send(player, "limit-reached");
             return false;
@@ -98,6 +92,13 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
             plugin.messages().send(player, "economy-missing");
             return false;
         }
+
+        int minX = chunkX * 16;
+        int minZ = chunkZ * 16;
+        int maxX = minX + 15;
+        int maxZ = minZ + 15;
+        Claim claim = new Claim(UUID.randomUUID(), player.getUniqueId(), world, minX, minZ, maxX, maxZ, "Chunk " + chunkX + ", " + chunkZ);
+        applyDefaultFlags(claim);
 
         double cost = plugin.chunkPrice();
         if (!plugin.charge(player, cost)) {
@@ -109,6 +110,13 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
         plugin.claims().add(claim);
         player.sendMessage("§a§l✓ Chunk claimé ! §7" + world + " §8• §f" + chunkX + ", " + chunkZ);
         return true;
+    }
+
+    private void applyDefaultFlags(Claim claim) {
+        for (ClaimFlag flag : ClaimFlag.values()) {
+            String path = "claim.default-flags." + flag.name().toLowerCase(Locale.ROOT).replace('_', '-');
+            claim.setFlag(flag, plugin.getConfig().getBoolean(path, claim.getFlag(flag)));
+        }
     }
 
     /** Unclaims exactly the chunk where the player is standing. */
