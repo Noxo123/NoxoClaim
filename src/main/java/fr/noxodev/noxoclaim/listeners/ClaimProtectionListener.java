@@ -108,7 +108,7 @@ public final class ClaimProtectionListener implements Listener {
     public void fluidFlow(BlockFromToEvent event) {
         Claim source = claimAt(event.getBlock().getLocation());
         Claim destination = claimAt(event.getToBlock().getLocation());
-        if (destination != null && destination != source && source == null) event.setCancelled(true);
+        if (destination != null && destination != source) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
