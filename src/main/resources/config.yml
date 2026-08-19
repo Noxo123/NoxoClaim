@@ -1,0 +1,17 @@
+claim:
+  max-per-player: 10
+  min-size: 25
+  max-size: 1000000
+  default-flags:
+    pvp: false
+    explosions: false
+    fire: false
+    mob-griefing: false
+    entry: true
+wand:
+  material: GOLDEN_SHOVEL
+teleport:
+  delay-seconds: 3
+  cancel-on-move: true
+storage:
+  file: claims.yml
