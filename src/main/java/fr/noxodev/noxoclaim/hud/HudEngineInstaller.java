@@ -42,7 +42,10 @@ public final class HudEngineInstaller {
         plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
             Path tmp = pluginsDir.resolve(FILE_NAME + ".download");
             try {
-                HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+                HttpClient client = HttpClient.newBuilder()
+                        .followRedirects(HttpClient.Redirect.NORMAL)
+                        .connectTimeout(Duration.ofSeconds(15))
+                        .build();
                 HttpRequest request = HttpRequest.newBuilder(URI.create(URL))
                         .timeout(Duration.ofMinutes(2))
                         .header("User-Agent", "NoxoClaim/" + plugin.getDescription().getVersion())
