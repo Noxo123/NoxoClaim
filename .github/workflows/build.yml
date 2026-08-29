@@ -2,8 +2,11 @@ name: Build NoxoClaim
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+
   pull_request:
+
   workflow_dispatch:
 
 permissions:
@@ -13,99 +16,322 @@ concurrency:
   group: noxoclaim-${{ github.ref }}
   cancel-in-progress: false
 
+
+# ============================================================
+# BUILD
+# ============================================================
+
 jobs:
+
   build:
+
+    name: Build — ${{ matrix.name }}
+
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
+
       matrix:
         include:
+
           - name: Paper 26.2
             paper-api: 26.2.build.+
             update-name: Paper-26.2
+
           - name: Paper 26.1.2
             paper-api: 26.1.2.build.+
             update-name: Paper-26.1.2
-    name: Build — ${{ matrix.name }}
+
+
     steps:
+
+      # --------------------------------------------------------
+      # Checkout
+      # --------------------------------------------------------
+
       - name: Checkout
         uses: actions/checkout@v5
+
         with:
           fetch-depth: 0
+
+
+      # --------------------------------------------------------
+      # Java
+      # --------------------------------------------------------
+
       - name: Setup Java 25
         uses: actions/setup-java@v5
+
         with:
           distribution: temurin
-          java-version: '25'
+          java-version: "25"
           architecture: x64
           cache: gradle
+
+
+      # --------------------------------------------------------
+      # Gradle
+      # --------------------------------------------------------
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
+
         with:
-          gradle-version: '9.7.0'
+          gradle-version: "9.7.0"
           validate-wrappers: false
+
+
+      # --------------------------------------------------------
+      # Toolchain
+      # --------------------------------------------------------
+
       - name: Verify toolchain
         run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "NoxoClaim Build"
+          echo "========================================"
+
+          echo ""
+          echo "Java:"
           java -version
+
+          echo ""
+          echo "Gradle:"
           gradle --version
+
+          echo ""
+          echo "Commit:"
+          echo "${GITHUB_SHA}"
+
+          echo ""
+          echo "Paper API:"
+          echo "${{ matrix.paper-api }}"
+
+
+      # --------------------------------------------------------
+      # Build + tests
+      # --------------------------------------------------------
+
       - name: Build and test
         run: |
-          gradle --no-daemon --stacktrace clean test build \
+          set -euo pipefail
+
+          gradle \
+            --no-daemon \
+            --stacktrace \
+            clean \
+            test \
+            build \
             -PpaperApiVersion="${{ matrix.paper-api }}" \
-            -PnoxoclaimCommit="${{ github.sha }}"
+            -PnoxoclaimCommit="${GITHUB_SHA}"
+
+
+      # --------------------------------------------------------
+      # Verify JAR
+      # --------------------------------------------------------
+
       - name: Verify generated JAR
         run: |
-          set -e
+          set -euo pipefail
+
+          echo "Generated files:"
           ls -lah build/libs/
-          test -n "$(find build/libs -maxdepth 1 -type f -name '*.jar' -print -quit)"
+
+          JAR="$(find build/libs \
+            -maxdepth 1 \
+            -type f \
+            -name '*.jar' \
+            -print \
+            -quit)"
+
+          if [ -z "${JAR}" ]; then
+            echo "::error::No JAR generated."
+            exit 1
+          fi
+
+          echo ""
+          echo "JAR detected:"
+          echo "${JAR}"
+
+
+      # --------------------------------------------------------
+      # Prepare update artifact
+      # --------------------------------------------------------
+
       - name: Prepare update artifact
         if: success()
+        shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p dist
-          cp build/libs/*.jar "dist/NoxoClaim-${{ matrix.update-name }}-${GITHUB_SHA}.jar"
-          sha256sum "dist/NoxoClaim-${{ matrix.update-name }}-${GITHUB_SHA}.jar" > "dist/NoxoClaim-${{ matrix.update-name }}-${GITHUB_SHA}.jar.sha256"
+
+          JAR="$(find build/libs \
+            -maxdepth 1 \
+            -type f \
+            -name '*.jar' \
+            -print \
+            -quit)"
+
+          OUTPUT="NoxoClaim-${{ matrix.update-name }}-${GITHUB_SHA}.jar"
+
+          cp "${JAR}" "dist/${OUTPUT}"
+
+          sha256sum \
+            "dist/${OUTPUT}" \
+            > "dist/${OUTPUT}.sha256"
+
+          echo "Artifact:"
+          ls -lah dist/
+
+
+      # --------------------------------------------------------
+      # Upload artifact
+      # --------------------------------------------------------
+
       - name: Upload update artifact
         if: success()
         uses: actions/upload-artifact@v4
+
         with:
           name: NoxoClaim-${{ matrix.update-name }}
+
           path: dist/*
+
           if-no-files-found: error
 
+
+# ============================================================
+# PUBLISH UPDATE CHANNEL
+# ============================================================
+
   publish-update-channel:
+
     name: Publish commit-based update channel
-    needs: build
-    if: success() && github.event_name == 'push'
+
+    needs:
+      - build
+
+    if: |
+      success() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+
     runs-on: ubuntu-latest
+
+
     steps:
+
+      # --------------------------------------------------------
+      # Checkout
+      # --------------------------------------------------------
+
       - name: Checkout source
         uses: actions/checkout@v5
+
         with:
           fetch-depth: 1
+
+
+      # --------------------------------------------------------
+      # Download builds
+      # --------------------------------------------------------
+
       - name: Download build artifacts
         uses: actions/download-artifact@v5
+
         with:
           pattern: NoxoClaim-Paper-*
           path: update-assets
           merge-multiple: true
+
+
+      # --------------------------------------------------------
+      # Verify artifacts
+      # --------------------------------------------------------
+
+      - name: Verify downloaded artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Downloaded update assets:"
+          find update-assets \
+            -maxdepth 1 \
+            -type f \
+            -print
+
+          test -n "$(find update-assets \
+            -maxdepth 1 \
+            -type f \
+            -name '*.jar' \
+            -print \
+            -quit)"
+
+          test -n "$(find update-assets \
+            -maxdepth 1 \
+            -type f \
+            -name '*.sha256' \
+            -print \
+            -quit)"
+
+
+      # --------------------------------------------------------
+      # Prepare manifest
+      # --------------------------------------------------------
+
       - name: Prepare update manifest
         shell: bash
         run: |
           set -euo pipefail
+
           mkdir -p publish
+
           cp update-assets/*.jar publish/
           cp update-assets/*.sha256 publish/
+
           JAR_262="NoxoClaim-Paper-26.2-${GITHUB_SHA}.jar"
           JAR_2612="NoxoClaim-Paper-26.1.2-${GITHUB_SHA}.jar"
-          SHA_262="$(cut -d' ' -f1 "update-assets/${JAR_262}.sha256")"
-          SHA_2612="$(cut -d' ' -f1 "update-assets/${JAR_2612}.sha256")"
+
+          SHA_FILE_262="update-assets/${JAR_262}.sha256"
+          SHA_FILE_2612="update-assets/${JAR_2612}.sha256"
+
+          if [ ! -f "${SHA_FILE_262}" ]; then
+            echo "::error::Missing Paper 26.2 SHA-256 file."
+            exit 1
+          fi
+
+          if [ ! -f "${SHA_FILE_2612}" ]; then
+            echo "::error::Missing Paper 26.1.2 SHA-256 file."
+            exit 1
+          fi
+
+          SHA_262="$(awk '{print $1}' "${SHA_FILE_262}")"
+          SHA_2612="$(awk '{print $1}' "${SHA_FILE_2612}")"
+
+          if [ -z "${SHA_262}" ]; then
+            echo "::error::Paper 26.2 SHA-256 is empty."
+            exit 1
+          fi
+
+          if [ -z "${SHA_2612}" ]; then
+            echo "::error::Paper 26.1.2 SHA-256 is empty."
+            exit 1
+          fi
+
+          GENERATED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
           cat > publish/update.json <<EOF
           {
             "plugin": "NoxoClaim",
+            "channel": "commit",
             "commit": "${GITHUB_SHA}",
             "version": "${GITHUB_SHA:0:7}",
-            "generatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "generatedAt": "${GENERATED_AT}",
             "downloads": {
               "26.2": {
                 "file": "${JAR_262}",
@@ -118,29 +344,199 @@ jobs:
             }
           }
           EOF
+
+          echo "Generated update manifest:"
+          cat publish/update.json
+
+
+      # --------------------------------------------------------
+      # Publish branch
+      # --------------------------------------------------------
+
       - name: Publish update channel branch
         shell: bash
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          echo "========================================"
+          echo "Publishing NoxoClaim update channel"
+          echo "========================================"
+
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
           rm -rf /tmp/noxoclaim-updates
-          git clone --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/noxoclaim-updates
+
+          echo ""
+          echo "Cloning repository..."
+
+          git clone \
+            --no-tags \
+            "${REPO_URL}" \
+            /tmp/noxoclaim-updates
+
           cd /tmp/noxoclaim-updates
-          if git ls-remote --exit-code --heads origin updates >/dev/null 2>&1; then
-            git fetch --depth=1 origin updates
-            git checkout -B updates FETCH_HEAD
+
+          # ----------------------------------------------------
+          # IMPORTANT:
+          # Configure Git INSIDE the cloned repository.
+          # ----------------------------------------------------
+
+          git config user.name "github-actions[bot]"
+
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # ----------------------------------------------------
+          # Create/update updates branch
+          # ----------------------------------------------------
+
+          if git ls-remote \
+            --exit-code \
+            --heads \
+            origin \
+            updates \
+            >/dev/null 2>&1
+          then
+
+            echo "Existing updates branch detected."
+
+            git fetch \
+              --depth=1 \
+              origin \
+              updates
+
+            git checkout \
+              -B updates \
+              FETCH_HEAD
+
           else
-            git checkout --orphan updates
+
+            echo "Creating updates branch."
+
+            git checkout \
+              --orphan \
+              updates
+
+            # Remove files from the orphan branch.
+            git rm \
+              -rf \
+              . \
+              >/dev/null 2>&1 \
+              || true
+
           fi
-          find . -maxdepth 1 -type f -delete
+
+          # ----------------------------------------------------
+          # Clean previous update files
+          # ----------------------------------------------------
+
+          echo ""
+          echo "Cleaning old update files..."
+
+          find . \
+            -maxdepth 1 \
+            -type f \
+            -delete
+
           rm -rf assets
+
           mkdir -p assets
-          cp "${GITHUB_WORKSPACE}/publish/update.json" ./update.json
-          cp "${GITHUB_WORKSPACE}"/publish/*.jar ./assets/
-          cp "${GITHUB_WORKSPACE}"/publish/*.sha256 ./assets/
+
+          # ----------------------------------------------------
+          # Copy update manifest
+          # ----------------------------------------------------
+
+          echo ""
+          echo "Copying update manifest..."
+
+          cp \
+            "${GITHUB_WORKSPACE}/publish/update.json" \
+            ./update.json
+
+          # ----------------------------------------------------
+          # Copy JARs
+          # ----------------------------------------------------
+
+          echo ""
+          echo "Copying plugin builds..."
+
+          cp \
+            "${GITHUB_WORKSPACE}"/publish/*.jar \
+            ./assets/
+
+          # ----------------------------------------------------
+          # Copy SHA-256
+          # ----------------------------------------------------
+
+          cp \
+            "${GITHUB_WORKSPACE}"/publish/*.sha256 \
+            ./assets/
+
+          # ----------------------------------------------------
+          # Show final structure
+          # ----------------------------------------------------
+
+          echo ""
+          echo "Update channel content:"
+
+          find . \
+            -maxdepth 2 \
+            -type f \
+            -print \
+            | sort
+
+          # ----------------------------------------------------
+          # Git status
+          # ----------------------------------------------------
+
+          echo ""
+          echo "Git status:"
+
+          git status --short
+
+          # ----------------------------------------------------
+          # Commit
+          # ----------------------------------------------------
+
           git add -A
-          git commit -m "publish: build ${GITHUB_SHA}" || true
-          git push origin updates
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+
+          if git diff \
+            --cached \
+            --quiet
+          then
+
+            echo ""
+            echo "No changes detected."
+            echo "Nothing to publish."
+
+            exit 0
+
+          fi
+
+          echo ""
+          echo "Creating update commit..."
+
+          git commit \
+            -m "publish: build ${GITHUB_SHA}"
+
+          # ----------------------------------------------------
+          # Push
+          # ----------------------------------------------------
+
+          echo ""
+          echo "Pushing updates branch..."
+
+          git push \
+            origin \
+            updates
+
+          echo ""
+          echo "========================================"
+          echo "NoxoClaim update channel published."
+          echo "Commit: ${GITHUB_SHA}"
+          echo "Branch: updates"
+          echo "========================================"
