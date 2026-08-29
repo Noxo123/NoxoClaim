@@ -10,12 +10,12 @@ softdepend:
   - LuckPerms
 commands:
   claim:
-    description: Gère les claims et ouvre les interfaces NoxoClaim
-    usage: /claim [menu|map|voir|list|info|flags|trust|untrust|sethome|home|unclaim]
+    description: Gère les claims, la carte et les protections NoxoClaim
+    usage: /claim [menu|map|voir|list|info|flags|trust|untrust|sethome|home|unclaim|help]
     aliases: [claims]
   hclaim:
     description: Alias de gestion NoxoClaim
-    usage: /hclaim [menu|map|voir|list|info|flags|trust|untrust|sethome|home|unclaim]
+    usage: /hclaim [menu|map|voir|list|info|flags|trust|untrust|sethome|home|unclaim|help]
   uclaim:
     description: Retire le claim actuel
     usage: /uclaim
@@ -37,8 +37,8 @@ permissions:
     description: Ignore les protections NoxoClaim
     default: op
   noxoclaim.claim:
-    description: Autorise le joueur à créer un claim
+    description: Autorise le joueur à créer un claim manuel
     default: false
   noxoclaim.autoclaim:
-    description: Autorise le joueur à bénéficier du claim automatique
+    description: Autorise le claim automatique à l'entrée d'un chunk libre
     default: false
