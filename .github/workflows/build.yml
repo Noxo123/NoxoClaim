@@ -22,8 +22,10 @@ jobs:
         include:
           - name: Paper 26.2
             paper-api: 26.2.build.+
+            update-name: Paper-26.2
           - name: Paper 26.1.2
             paper-api: 26.1.2.build.+
+            update-name: Paper-26.1.2
     name: Build — ${{ matrix.name }}
     steps:
       - name: Checkout
@@ -56,24 +58,89 @@ jobs:
           set -e
           ls -lah build/libs/
           test -n "$(find build/libs -maxdepth 1 -type f -name '*.jar' -print -quit)"
-      - name: Publish immutable commit release
-        if: success() && github.event_name == 'push' && matrix.paper-api == '26.2.build.+'
-        uses: softprops/action-gh-release@v2
+      - name: Prepare update artifact
+        if: success()
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/libs/*.jar "dist/NoxoClaim-${{ matrix.update-name }}-${GITHUB_SHA}.jar"
+          sha256sum "dist/NoxoClaim-${{ matrix.update-name }}-${GITHUB_SHA}.jar" > "dist/NoxoClaim-${{ matrix.update-name }}-${GITHUB_SHA}.jar.sha256"
+      - name: Upload update artifact
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: "build-${{ github.sha }}"
-          name: "NoxoClaim Build ${{ github.sha }}"
-          body: |
-            Build automatique de NoxoClaim.
+          name: NoxoClaim-${{ matrix.update-name }}
+          path: dist/*
+          if-no-files-found: error
 
-            Commit : ${{ github.sha }}
-            Branche : main
-            Paper : 26.2
-
-            Cette release correspond exactement à ce commit.
-            Elle est utilisée par le système de mise à jour automatique de NoxoClaim.
-          prerelease: true
-          make_latest: false
-          files: build/libs/*.jar
-          fail_on_unmatched_files: true
+  publish-update-channel:
+    name: Publish commit-based update channel
+    needs: build
+    if: success() && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+      - name: Download build artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: NoxoClaim-Paper-*
+          path: update-assets
+          merge-multiple: true
+      - name: Prepare update manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p publish
+          cp update-assets/*.jar publish/
+          cp update-assets/*.sha256 publish/
+          JAR_262="NoxoClaim-Paper-26.2-${GITHUB_SHA}.jar"
+          JAR_2612="NoxoClaim-Paper-26.1.2-${GITHUB_SHA}.jar"
+          SHA_262="$(cut -d' ' -f1 "update-assets/${JAR_262}.sha256")"
+          SHA_2612="$(cut -d' ' -f1 "update-assets/${JAR_2612}.sha256")"
+          cat > publish/update.json <<EOF
+          {
+            "plugin": "NoxoClaim",
+            "commit": "${GITHUB_SHA}",
+            "version": "${GITHUB_SHA:0:7}",
+            "generatedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "downloads": {
+              "26.2": {
+                "file": "${JAR_262}",
+                "sha256": "${SHA_262}"
+              },
+              "26.1.2": {
+                "file": "${JAR_2612}",
+                "sha256": "${SHA_2612}"
+              }
+            }
+          }
+          EOF
+      - name: Publish update channel branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf /tmp/noxoclaim-updates
+          git clone --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/noxoclaim-updates
+          cd /tmp/noxoclaim-updates
+          if git ls-remote --exit-code --heads origin updates >/dev/null 2>&1; then
+            git fetch --depth=1 origin updates
+            git checkout -B updates FETCH_HEAD
+          else
+            git checkout --orphan updates
+          fi
+          find . -maxdepth 1 -type f -delete
+          rm -rf assets
+          mkdir -p assets
+          cp "${GITHUB_WORKSPACE}/publish/update.json" ./update.json
+          cp "${GITHUB_WORKSPACE}"/publish/*.jar ./assets/
+          cp "${GITHUB_WORKSPACE}"/publish/*.sha256 ./assets/
+          git add -A
+          git commit -m "publish: build ${GITHUB_SHA}" || true
+          git push origin updates
         env:
           GITHUB_TOKEN: ${{ github.token }}
