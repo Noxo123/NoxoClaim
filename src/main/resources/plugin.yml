@@ -10,11 +10,12 @@ softdepend:
   - LuckPerms
 commands:
   claim:
-    description: Claim le chunk actuel ou ouvre le menu
-    usage: /claim [menu|list|info|flags|trust|untrust|sethome|home|unclaim]
+    description: Gère les claims et ouvre les interfaces NoxoClaim
+    usage: /claim [menu|map|voir|list|info|flags|trust|untrust|sethome|home|unclaim]
+    aliases: [claims]
   hclaim:
     description: Alias de gestion NoxoClaim
-    usage: /hclaim [menu|list|info|flags|trust|untrust|sethome|home|unclaim]
+    usage: /hclaim [menu|map|voir|list|info|flags|trust|untrust|sethome|home|unclaim]
   uclaim:
     description: Retire le claim actuel
     usage: /uclaim
