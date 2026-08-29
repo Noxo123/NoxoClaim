@@ -4,6 +4,7 @@ import fr.noxodev.noxoclaim.commands.*;
 import fr.noxodev.noxoclaim.gui.ClaimGui;
 import fr.noxodev.noxoclaim.hud.HudEngineInstaller;
 import fr.noxodev.noxoclaim.hud.HudEngineIntegration;
+import fr.noxodev.noxoclaim.hud.HudEngineListener;
 import fr.noxodev.noxoclaim.listeners.ClaimProtectionListener;
 import fr.noxodev.noxoclaim.managers.*;
 import fr.noxodev.noxoclaim.map.ClaimMapIntegration;
@@ -39,11 +40,10 @@ public final class NoxoClaim extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new ClaimProtectionListener(this), this);
         mapIntegration = new ClaimMapIntegration(this);
 
-        // HUDEngine is optional at runtime. If missing, install the pinned and SHA-256 verified
-        // plugin for the next restart, while NoxoClaim itself keeps working normally.
         HudEngineInstaller.ensureInstalled(this);
         hudEngine = new HudEngineIntegration(this);
         hudEngine.start();
+        getServer().getPluginManager().registerEvents(new HudEngineListener(this), this);
 
         ClaimGui gui = new ClaimGui(this);
         ClaimCommand command = new ClaimCommand(this, gui);
