@@ -14,30 +14,47 @@ import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class NoxoClaim extends JavaPlugin {
+    private static final String PLUGMAN_X = "PlugManX";
     private ClaimManager claims;
     private MessageManager messages;
     private Economy economy;
     private UpdateInfo updateInfo;
     private ClaimMapIntegration mapIntegration;
     private UpdateChecker updateChecker;
+    private boolean plugManX;
 
     @Override public void onEnable() {
-        saveDefaultConfig(); saveResource("messages.yml", false);
-        claims = new ClaimManager(getDataFolder()); messages = new MessageManager(getDataFolder()); setupEconomy();
+        saveDefaultConfig();
+        saveResource("messages.yml", false);
+        claims = new ClaimManager(getDataFolder());
+        messages = new MessageManager(getDataFolder());
+        setupEconomy();
+        detectPlugManX();
         getServer().getPluginManager().registerEvents(new ClaimProtectionListener(this), this);
         mapIntegration = new ClaimMapIntegration(this);
-        ClaimGui gui = new ClaimGui(this); ClaimCommand command = new ClaimCommand(this, gui);
+        ClaimGui gui = new ClaimGui(this);
+        ClaimCommand command = new ClaimCommand(this, gui);
         register("hclaim", command); register("uclaim", command); register("map", command); register("claim", command); register("chome", command);
         if (getCommand("claimadmin") != null) { ClaimAdminCommand admin = new ClaimAdminCommand(this); getCommand("claimadmin").setExecutor(admin); getCommand("claimadmin").setTabCompleter(admin); }
-        startUpdateChecker(); getLogger().info("NoxoClaim " + getDescription().getVersion() + " activé.");
+        startUpdateChecker();
+        getLogger().info("NoxoClaim " + getDescription().getVersion() + " activé.");
+        if (plugManX) getLogger().info("Intégration PlugManX détectée : rechargement dynamique compatible.");
     }
+
+    private void detectPlugManX() {
+        plugManX = getServer().getPluginManager().getPlugin(PLUGMAN_X) != null;
+        if (!plugManX) return;
+        getServer().getScheduler().runTask(this, () -> {
+            if (isEnabled()) getLogger().fine("PlugManX est actif : état NoxoClaim vérifié après chargement.");
+        });
+    }
+
+    public boolean isPlugManXAvailable() { return plugManX && getServer().getPluginManager().getPlugin(PLUGMAN_X) != null; }
 
     private void startUpdateChecker() {
         updateChecker = new UpdateChecker(this);
         if (!getConfig().getBoolean("updates.enabled", true)) return;
-        if (getConfig().getBoolean("updates.check-on-startup", true)) {
-            Bukkit.getScheduler().runTaskLater(this, () -> updateChecker.check(getConfig().getBoolean("updates.notify-console", true)), 40L);
-        }
+        if (getConfig().getBoolean("updates.check-on-startup", true)) Bukkit.getScheduler().runTaskLater(this, () -> updateChecker.check(getConfig().getBoolean("updates.notify-console", true)), 40L);
         long hours = Math.max(1L, getConfig().getLong("updates.check-interval-hours", 6L));
         long ticks = hours * 60L * 60L * 20L;
         Bukkit.getScheduler().runTaskTimer(this, () -> updateChecker.check(false), ticks, ticks);
@@ -52,5 +69,5 @@ public final class NoxoClaim extends JavaPlugin {
     public boolean charge(Player player, double amount) { if (economy == null) return false; if (!economy.has(player, amount)) return false; return economy.withdrawPlayer(player, amount).transactionSuccess(); }
     public String formatMoney(double amount) { return economy == null ? String.format("%.2f$", amount) : economy.format(amount); }
     public ClaimManager claims() { return claims; } public MessageManager messages() { return messages; } public Economy economy() { return economy; } public double chunkPrice() { return getConfig().getDouble("economy.cost-per-chunk", 500.0); } public ClaimMapIntegration mapIntegration() { return mapIntegration; }
-    @Override public void onDisable() { if (claims != null) claims.save(); }
+    @Override public void onDisable() { if (claims != null) claims.save(); getLogger().info("NoxoClaim désactivé proprement."); }
 }
