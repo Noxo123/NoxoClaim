@@ -27,11 +27,17 @@ commands:
     usage: /chome <nom|list>
   claimadmin:
     description: Administration NoxoClaim
-    usage: /claimadmin <list|delete|deleteall|save|reload|update>
+    usage: /claimadmin <list|delete|deleteall|save|reload|update|info|debug>
     permission: noxoclaim.admin
 permissions:
   noxoclaim.admin:
     description: Accès complet à NoxoClaim
+    default: op
+  noxoclaim.admin.update:
+    description: Autorise la vérification et préparation des mises à jour
+    default: op
+  noxoclaim.admin.reload:
+    description: Autorise le rechargement de la configuration
     default: op
   noxoclaim.bypass:
     description: Ignore les protections NoxoClaim
@@ -41,4 +47,28 @@ permissions:
     default: false
   noxoclaim.autoclaim:
     description: Autorise le claim automatique à l'entrée d'un chunk libre
+    default: false
+  noxoclaim.menu:
+    description: Autorise l'accès au menu NoxoClaim
+    default: true
+  noxoclaim.map:
+    description: Autorise l'accès à la carte NoxoClaim
+    default: true
+  noxoclaim.view:
+    description: Autorise la visualisation des claims
+    default: true
+  noxoclaim.unclaim:
+    description: Autorise la suppression de ses claims
+    default: true
+  noxoclaim.claim.3:
+    description: Limite de 3 claims
+    default: false
+  noxoclaim.claim.10:
+    description: Limite de 10 claims
+    default: false
+  noxoclaim.claim.25:
+    description: Limite de 25 claims
+    default: false
+  noxoclaim.claim.50:
+    description: Limite de 50 claims
     default: false
