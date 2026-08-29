@@ -27,7 +27,9 @@ public final class UpdateChecker {
     private static final String UPDATE_BASE = "https://raw.githubusercontent.com/Noxo123/NoxoClaim/updates/";
     private static final String MANIFEST_URL = UPDATE_BASE + "update.json";
     private static final Pattern COMMIT = Pattern.compile("\\\"commit\\\"\\s*:\\s*\\\"([0-9a-fA-F]{40})\\\"");
-    private static final Pattern DOWNLOAD = Pattern.compile("\\\"(26\\\\.2|26\\\\.1\\\\.2)\\\"\\s*:\\s*\\{\\s*\\\"file\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"\\s*,\\s*\\\"sha256\\\"\\s*:\\s*\\\"([0-9a-fA-F]{64})\\\"");
+    private static final Pattern DOWNLOAD = Pattern.compile("\\\"(26\\.2|26\\.1\\.2)\\\"\\s*:\\s*\\{\\s*"
+            + "\\\"file\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"\\s*,\\s*"
+            + "\\\"sha256\\\"\\s*:\\s*\\\"([0-9a-fA-F]{64})\\\"\\s*\\}");
 
     private final NoxoClaim plugin;
     private final HttpClient client = HttpClient.newBuilder()
@@ -62,70 +64,57 @@ public final class UpdateChecker {
             try {
                 Manifest manifest = fetchManifest();
                 String localCommit = getBuildCommit();
-
-                // A downloaded update is already staged. Never download the same
-                // build again on every startup while waiting for the restart.
                 Path updateDir = updateDirectory();
                 Path pending = updateDir.resolve("NoxoClaim.pending");
+
                 if (Files.isRegularFile(pending)) {
                     String pendingCommit = Files.readString(pending).trim();
                     if (manifest.commit.equalsIgnoreCase(pendingCommit)) {
-                        report(sender, notifyConsole,
-                                "§e[NoxoClaim] Mise à jour §f" + shortSha(manifest.commit)
-                                        + "§e déjà préparée. Redémarrez le serveur pour l'appliquer.", false);
+                        report(sender, notifyConsole, "§e[NoxoClaim] Mise à jour §f" + shortSha(manifest.commit)
+                                + "§e déjà préparée. Redémarrez le serveur pour l'appliquer.", false);
                         return;
                     }
                     Files.deleteIfExists(pending);
                 }
 
                 if (manifest.commit.equalsIgnoreCase(localCommit)) {
-                    plugin.setUpdateInfo(UpdateInfo.upToDate(
-                            plugin.getDescription().getVersion(),
-                            shortSha(manifest.commit),
-                            UPDATE_BASE));
-                    report(sender, notifyConsole,
-                            "§a[NoxoClaim] NoxoClaim est à jour (§f" + shortSha(manifest.commit) + "§a).", false);
+                    plugin.setUpdateInfo(UpdateInfo.upToDate(plugin.getDescription().getVersion(),
+                            shortSha(manifest.commit), UPDATE_BASE));
+                    report(sender, notifyConsole, "§a[NoxoClaim] NoxoClaim est à jour (§f"
+                            + shortSha(manifest.commit) + "§a).", false);
                     return;
                 }
 
                 String paperVersion = detectSupportedPaperVersion();
                 if (paperVersion == null) {
-                    report(sender, notifyConsole,
-                            "§e[NoxoClaim] Une mise à jour existe, mais aucune build compatible avec cette version de Paper n'est publiée.", false);
+                    report(sender, notifyConsole, "§e[NoxoClaim] Une mise à jour existe, mais aucune build compatible avec cette version de Paper n'est publiée.", false);
                     return;
                 }
 
                 Artifact artifact = manifest.artifact(paperVersion);
                 if (artifact == null) {
-                    report(sender, notifyConsole,
-                            "§e[NoxoClaim] Aucun artefact compatible pour Paper " + paperVersion + ".", false);
+                    report(sender, notifyConsole, "§e[NoxoClaim] Aucun artefact compatible pour Paper "
+                            + paperVersion + ".", false);
                     return;
                 }
 
-                plugin.setUpdateInfo(new UpdateInfo(
-                        true,
-                        plugin.getDescription().getVersion(),
-                        "build-" + shortSha(manifest.commit),
-                        UPDATE_BASE,
-                        "Commit " + shortSha(manifest.commit)
-                ));
+                plugin.setUpdateInfo(new UpdateInfo(true, plugin.getDescription().getVersion(),
+                        "build-" + shortSha(manifest.commit), UPDATE_BASE,
+                        "Commit " + shortSha(manifest.commit)));
 
                 if (!plugin.getConfig().getBoolean("updates.auto-update", true)) {
-                    report(sender, notifyConsole,
-                            "§e[NoxoClaim] Nouvelle build disponible : §f" + shortSha(manifest.commit), true);
+                    report(sender, notifyConsole, "§e[NoxoClaim] Nouvelle build disponible : §f"
+                            + shortSha(manifest.commit), true);
                     return;
                 }
 
                 downloadAndVerify(artifact, manifest.commit);
                 Files.createDirectories(updateDir);
                 Files.writeString(pending, manifest.commit);
-
-                report(sender, true,
-                        "§a[NoxoClaim] ✓ Mise à jour vérifiée et préparée (§f" + shortSha(manifest.commit)
-                                + "§a). Redémarrez le serveur pour l'appliquer.", false);
+                report(sender, true, "§a[NoxoClaim] ✓ Mise à jour vérifiée et préparée (§f"
+                        + shortSha(manifest.commit) + "§a). Redémarrez le serveur pour l'appliquer.", false);
             } catch (Exception e) {
-                report(sender, notifyConsole,
-                        "§c[NoxoClaim] Mise à jour impossible : " + safeMessage(e), false);
+                report(sender, notifyConsole, "§c[NoxoClaim] Mise à jour impossible : " + safeMessage(e), false);
             } finally {
                 checking = false;
             }
@@ -191,7 +180,6 @@ public final class UpdateChecker {
         } catch (Exception ignored) {
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
         }
-
         plugin.getLogger().info("Mise à jour préparée : " + artifact.file + " (SHA-256 vérifié).");
     }
 
