@@ -1,10 +1,11 @@
 plugins {
     java
+    id("com.gradleup.shadow") version "8.3.9"
 }
 
 group = "fr.noxodev"
-version = "1.1.4"
-description = "NoxoClaim - claims par chunks pour Paper 26.2 et 26.1"
+version = "2.0.1"
+description = "NoxoClaim - claims professionnels pour Paper 26.2 et 26.1"
 
 repositories {
     mavenCentral()
@@ -19,7 +20,9 @@ dependencies {
     compileOnly(paperApi)
     testImplementation(paperApi)
 
-    compileOnly("com.github.MilkBowl:VaultAPI:1.7") {
+    // VaultAPI must be present in the final plugin JAR because NoxoClaim
+    // references Economy directly. The actual Vault plugin remains optional.
+    implementation("com.github.MilkBowl:VaultAPI:1.7") {
         exclude(group = "org.bukkit", module = "bukkit")
     }
 
@@ -36,10 +39,13 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(25)
 }
 
-tasks.test {
-    useJUnitPlatform()
+tasks.test { useJUnitPlatform() }
+
+tasks.jar { enabled = false }
+
+tasks.shadowJar {
+    archiveFileName.set("NoxoClaim-${project.version}.jar")
+    mergeServiceFiles()
 }
 
-tasks.jar {
-    archiveFileName.set("NoxoClaim-${project.version}.jar")
-}
+tasks.build { dependsOn(tasks.shadowJar) }
