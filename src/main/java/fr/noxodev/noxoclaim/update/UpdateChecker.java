@@ -31,6 +31,7 @@ public final class UpdateChecker {
     private static final Pattern DOWNLOAD = Pattern.compile("\\\"(26\\.2|26\\.1\\.2)\\\"\\s*:\\s*\\{\\s*"
             + "\\\"file\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"\\s*,\\s*"
             + "\\\"sha256\\\"\\s*:\\s*\\\"([0-9a-fA-F]{64})\\\"\\s*\\}");
+    private static final Pattern SHA = Pattern.compile("(?i)^[0-9a-f]{40}$");
 
     private final NoxoClaim plugin;
     private final HttpClient client = HttpClient.newBuilder()
@@ -41,18 +42,34 @@ public final class UpdateChecker {
 
     public UpdateChecker(NoxoClaim plugin) { this.plugin = plugin; }
 
-    public void check(boolean notifyConsole) { checkInternal(notifyConsole, null); }
+    public void check(boolean notifyConsole) { checkInternal(notifyConsole, null, null); }
 
-    public void checkManual(CommandSender sender) {
+    /** Checks the current update channel. If requestedCommit is non-null, only that exact commit is accepted. */
+    public void checkManual(CommandSender sender) { checkManual(sender, null); }
+
+    /**
+     * Manual update/check. With a commit SHA, the updater refuses to install a different commit.
+     * This makes /claimadmin update <sha> deterministic and safe.
+     */
+    public void checkManual(CommandSender sender, String requestedCommit) {
+        if (requestedCommit != null) requestedCommit = requestedCommit.trim().toLowerCase(Locale.ROOT);
+        if (requestedCommit != null && !SHA.matcher(requestedCommit).matches()) {
+            sender.sendMessage("§c[NoxoClaim] Commit invalide. Utilise le SHA complet de 40 caractères.");
+            return;
+        }
         if (checking) {
             sender.sendMessage("§e[NoxoClaim] Une vérification des mises à jour est déjà en cours.");
             return;
         }
-        sender.sendMessage("§b[NoxoClaim] Vérification du canal de mise à jour...");
-        checkInternal(true, sender);
+        if (requestedCommit == null) {
+            sender.sendMessage("§b[NoxoClaim] Vérification du canal de mise à jour...");
+        } else {
+            sender.sendMessage("§b[NoxoClaim] Recherche du commit §f" + shortSha(requestedCommit) + "§b...");
+        }
+        checkInternal(true, sender, requestedCommit);
     }
 
-    private void checkInternal(boolean notifyConsole, CommandSender sender) {
+    private void checkInternal(boolean notifyConsole, CommandSender sender, String requestedCommit) {
         if (checking) {
             if (sender != null) sender.sendMessage("§e[NoxoClaim] Une vérification est déjà en cours.");
             return;
@@ -60,25 +77,40 @@ public final class UpdateChecker {
         if (sender == null && !plugin.getConfig().getBoolean("updates.enabled", true)) return;
         checking = true;
 
+        final String targetCommit = requestedCommit == null ? null : requestedCommit.toLowerCase(Locale.ROOT);
+
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 Manifest manifest = fetchManifest();
+
+                if (targetCommit != null && !manifest.commit.equalsIgnoreCase(targetCommit)) {
+                    report(sender, notifyConsole,
+                            "§c[NoxoClaim] Le commit demandé §f" + shortSha(targetCommit)
+                                    + "§c n'est pas disponible dans le canal de mise à jour actuel. "
+                                    + "Commit actuellement publié : §f" + shortSha(manifest.commit) + "§c.", false);
+                    return;
+                }
+
                 String localCommit = getBuildCommit();
                 Path updateDir = updateDirectory();
                 Path pending = updateDir.resolve("NoxoClaim.pending");
 
                 if (Files.isRegularFile(pending)) {
                     String pendingCommit = Files.readString(pending).trim();
-                    if (manifest.commit.equalsIgnoreCase(pendingCommit)) {
+                    if (manifest.commit.equalsIgnoreCase(pendingCommit) && targetCommit == null) {
                         report(sender, notifyConsole,
                                 "§e[NoxoClaim] Mise à jour §f" + shortSha(manifest.commit)
                                         + "§e déjà préparée dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
                         return;
                     }
-                    Files.deleteIfExists(pending);
+                    if (targetCommit == null || !manifest.commit.equalsIgnoreCase(targetCommit)) {
+                        Files.deleteIfExists(pending);
+                    }
                 }
 
-                if (manifest.commit.equalsIgnoreCase(localCommit)) {
+                // Without an explicit SHA, identical local builds are already up to date.
+                // With an explicit SHA, force preparation so the command can be used to repair/reinstall a build.
+                if (targetCommit == null && manifest.commit.equalsIgnoreCase(localCommit)) {
                     plugin.setUpdateInfo(UpdateInfo.upToDate(plugin.getDescription().getVersion(), shortSha(manifest.commit), UPDATE_BASE));
                     report(sender, notifyConsole,
                             "§a[NoxoClaim] NoxoClaim est à jour (§f" + shortSha(manifest.commit) + "§a).", false);
@@ -102,7 +134,9 @@ public final class UpdateChecker {
                 plugin.setUpdateInfo(new UpdateInfo(true, plugin.getDescription().getVersion(),
                         "build-" + shortSha(manifest.commit), UPDATE_BASE, "Commit " + shortSha(manifest.commit)));
 
-                if (!plugin.getConfig().getBoolean("updates.auto-update", true)) {
+                // Explicit /claimadmin update <sha> always means "prepare this exact build".
+                // Automatic/manual update without a SHA still respects updates.auto-update.
+                if (targetCommit == null && !plugin.getConfig().getBoolean("updates.auto-update", true)) {
                     report(sender, notifyConsole,
                             "§e[NoxoClaim] Nouvelle build disponible : §f" + shortSha(manifest.commit), true);
                     return;
@@ -112,8 +146,8 @@ public final class UpdateChecker {
                 Files.createDirectories(updateDir);
                 Files.writeString(pending, manifest.commit);
                 report(sender, true,
-                        "§a[NoxoClaim] ✓ Mise à jour vérifiée et préparée dans plugins/update (§f"
-                                + shortSha(manifest.commit) + "§a). Redémarrez le serveur pour l'appliquer.", false);
+                        "§a[NoxoClaim] ✓ Commit §f" + shortSha(manifest.commit)
+                                + "§a vérifié et préparé dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
             } catch (Exception e) {
                 report(sender, notifyConsole,
                         "§c[NoxoClaim] Mise à jour impossible : " + safeMessage(e), false);
