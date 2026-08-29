@@ -43,8 +43,8 @@ permissions:
     description: Ignore les protections NoxoClaim
     default: op
   noxoclaim.claim:
-    description: Autorise le joueur à créer un claim manuel
-    default: false
+    description: Autorise le joueur à créer un claim manuel, y compris depuis la carte
+    default: true
   noxoclaim.autoclaim:
     description: Autorise le claim automatique à l'entrée d'un chunk libre
     default: false
