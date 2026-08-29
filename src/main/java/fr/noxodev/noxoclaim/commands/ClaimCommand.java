@@ -71,15 +71,27 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
     }
 
     public boolean claimCurrentChunk(Player p) {
+        return claimChunk(p, p.getWorld(), p.getChunk().getX(), p.getChunk().getZ());
+    }
+
+    /** Claims the exact chunk selected by the interactive map. */
+    public boolean claimChunk(Player p, World world, int cx, int cz) {
         if (!p.hasPermission("noxoclaim.claim")) { plugin.messages().send(p,"no-permission"); return false; }
-        String w = p.getWorld().getName(); int cx = p.getChunk().getX(), cz = p.getChunk().getZ();
+        if (world == null) { p.sendMessage("§c§lNoxoClaim §8» §fMonde introuvable."); return false; }
+        String w = world.getName();
         Claim old = plugin.claims().atChunk(w,cx,cz);
-        if (old != null) { p.sendMessage(old.getOwner().equals(p.getUniqueId()) ? "§e§lNoxoClaim §8» §fCe chunk est déjà à toi." : "§c§lNoxoClaim §8» §fCe chunk est déjà claimé."); return false; }
+        if (old != null) {
+            p.sendMessage(old.getOwner().equals(p.getUniqueId()) ? "§e§lNoxoClaim §8» §fCe chunk est déjà à toi." : "§c§lNoxoClaim §8» §fCe chunk est déjà claimé.");
+            return false;
+        }
         if (plugin.claims().owned(p.getUniqueId()).size() >= plugin.getConfig().getInt("claim.max-per-player",10)) { plugin.messages().send(p,"limit-reached"); return false; }
         double cost = plugin.chunkPrice();
         if (plugin.economy()!=null && cost>0 && !plugin.charge(p,cost)) { p.sendMessage(plugin.messages().get("prefix") + plugin.messages().format("not-enough-money",Map.of("cost",plugin.formatMoney(cost),"chunks","1"))); return false; }
         Claim c = new Claim(UUID.randomUUID(),p.getUniqueId(),w,cx*16,cz*16,cx*16+15,cz*16+15,"Chunk "+cx+", "+cz);
-        plugin.claims().add(c); p.sendMessage("§a§l✓ Chunk claimé ! §7"+w+" §8• §f"+cx+", "+cz); ClaimEffects.onClaim(plugin,p); return true;
+        plugin.claims().add(c);
+        p.sendMessage("§a§l✓ Chunk claimé ! §7"+w+" §8• §f"+cx+", "+cz);
+        ClaimEffects.onClaim(plugin,p);
+        return true;
     }
 
     public boolean unclaimCurrentChunk(Player p) {
