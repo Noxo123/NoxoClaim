@@ -54,6 +54,16 @@ map:
   particles:
     type: END_ROD
 
+# Server-side HUD. No client mod is required; players only receive the generated resource pack.
+hudengine:
+  enabled: true
+  auto-install: true
+  minimap:
+    enabled: true
+    hud-key: noxoclaim:minimap
+    radius: 4
+    refresh-ticks: 10
+
 storage:
   file: claims.yml
   autosave-seconds: 300
