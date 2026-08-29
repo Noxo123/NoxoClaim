@@ -4,17 +4,220 @@ import fr.noxodev.noxoclaim.NoxoClaim;
 import fr.noxodev.noxoclaim.models.Claim;
 import fr.noxodev.noxoclaim.models.ClaimFlag;
 import fr.noxodev.noxoclaim.effects.ClaimVisualizer;
-import org.bukkit.Bukkit;import org.bukkit.Material;import org.bukkit.entity.Player;import org.bukkit.event.EventHandler;import org.bukkit.event.Listener;import org.bukkit.event.inventory.InventoryClickEvent;import org.bukkit.inventory.*;import org.bukkit.inventory.meta.ItemMeta;import java.util.*;
+import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
+
+import java.util.*;
 
 public final class ClaimGui {
- private static final String MAIN="§8§lNoxoClaim §7• Menu",CLAIMS="§8§lNoxoClaim §7• Mes claims",FLAGS="§8§lNoxoClaim §7• Protection",HELP="§8§lNoxoClaim §7• Aide",MAP="§8§lNoxoClaim §7• Carte"; private final NoxoClaim plugin; private final Map<UUID,Claim> flagClaims=new HashMap<>();
- public ClaimGui(NoxoClaim plugin){this.plugin=plugin;plugin.getServer().getPluginManager().registerEvents(new InventoryListener(),plugin);}
- public void openMain(Player p){Inventory i=Bukkit.createInventory(null,45,MAIN);fill(i,Material.GRAY_STAINED_GLASS_PANE," ");Claim c=plugin.claims().atChunk(p.getWorld().getName(),p.getChunk().getX(),p.getChunk().getZ());boolean own=c!=null&&c.getOwner().equals(p.getUniqueId());button(i,13,Material.DIRT,c==null?"§a§lClaim ce chunk":own?"§a§lMon chunk":"§c§lChunk protégé",c==null?"§7Le chunk actuel sera protégé.":own?"§7Tu possèdes ce chunk.":"§7Propriétaire : §f"+owner(c));button(i,10,Material.BOOK,"§b§lMes claims","§7Voir tous tes chunks claimés.");button(i,16,Material.SHIELD,"§6§lProtections","§7Gérer les protections.");button(i,22,Material.MAP,"§d§lCarte des claims","§7Voir les chunks autour de toi.");button(i,31,Material.COMPASS,"§d§lInfos du chunk","§7Voir le propriétaire et l'état.");button(i,33,Material.PAPER,"§f§lAide","§7Toutes les commandes.");button(i,40,Material.BARRIER,"§c§lFermer","§7Fermer le menu.");p.openInventory(i);}
- public void openClaims(Player p){List<Claim> cs=plugin.claims().owned(p.getUniqueId());Inventory i=Bukkit.createInventory(null,54,CLAIMS);fill(i,Material.GRAY_STAINED_GLASS_PANE," ");int slot=10;for(Claim c:cs){if(slot>=44)break;int cx=Math.floorDiv(c.getMinX(),16),cz=Math.floorDiv(c.getMinZ(),16);button(i,slot++,Material.DIRT,"§a§lChunk "+cx+" / "+cz,"§7Monde : §f"+c.getWorld(),"§7Membres : §f"+c.getMembers().size(),"","§eClique pour te téléporter.");}if(cs.isEmpty())button(i,22,Material.DIRT,"§e§lAucun claim","§7Utilise §f/claim§7 dans un chunk libre.");button(i,49,Material.ARROW,"§fRetour");button(i,53,Material.BARRIER,"§cFermer");p.openInventory(i);}
- public void openFlags(Player p,Claim c){if(c==null)return;flagClaims.put(p.getUniqueId(),c);Inventory i=Bukkit.createInventory(null,45,FLAGS);fill(i,Material.GRAY_STAINED_GLASS_PANE," ");button(i,10,c.getFlag(ClaimFlag.PVP)?Material.LIME_DYE:Material.GRAY_DYE,"§c⚔ PvP",state(c.getFlag(ClaimFlag.PVP)));button(i,12,c.getFlag(ClaimFlag.FIRE)?Material.LIME_DYE:Material.GRAY_DYE,"§6🔥 Feu",state(c.getFlag(ClaimFlag.FIRE)));button(i,14,c.getFlag(ClaimFlag.EXPLOSIONS)?Material.LIME_DYE:Material.GRAY_DYE,"§e💥 Explosions",state(c.getFlag(ClaimFlag.EXPLOSIONS)));button(i,16,c.getFlag(ClaimFlag.MOB_GRIEFING)?Material.LIME_DYE:Material.GRAY_DYE,"§5👹 Grief des mobs",state(c.getFlag(ClaimFlag.MOB_GRIEFING)));button(i,22,c.getFlag(ClaimFlag.ENTRY)?Material.LIME_DYE:Material.GRAY_DYE,"§b🚪 Entrée",state(c.getFlag(ClaimFlag.ENTRY)));button(i,40,Material.ARROW,"§fRetour");p.openInventory(i);}
- public void openHelp(Player p){Inventory i=Bukkit.createInventory(null,54,HELP);fill(i,Material.BLACK_STAINED_GLASS_PANE," ");button(i,10,Material.DIRT,"§a§l/claim","§7Claim le chunk actuel.");button(i,12,Material.CHEST,"§b§l/claim menu","§7Ouvre le menu principal.");button(i,14,Material.MAP,"§d§l/claim map","§7Ouvre la carte.");button(i,16,Material.END_ROD,"§e§l/claim voir","§7Affiche le contour en particules.");button(i,28,Material.BOOK,"§f§l/claim list","§7Liste tes claims.");button(i,30,Material.COMPASS,"§f§l/claim info","§7Informations du claim.");button(i,32,Material.SHIELD,"§6§l/claim flags","§7Gère les protections.");button(i,34,Material.PLAYER_HEAD,"§d§l/claim trust <joueur>","§7Ajoute un membre.");button(i,40,Material.ARROW,"§fRetour");p.openInventory(i);}
- public void openMap(Player p){Inventory i=Bukkit.createInventory(null,54,MAP);fill(i,Material.BLACK_STAINED_GLASS_PANE," ");int pcx=p.getChunk().getX(),pcz=p.getChunk().getZ();for(int dz=-2;dz<=2;dz++)for(int dx=-4;dx<=4;dx++){int cx=pcx+dx,cz=pcz+dz;Claim c=plugin.claims().atChunk(p.getWorld().getName(),cx,cz);Material m=c==null?Material.GRAY_CONCRETE:c.getOwner().equals(p.getUniqueId())?Material.LIME_CONCRETE:Material.RED_CONCRETE;String name=c==null?"§7Chunk libre":c.getOwner().equals(p.getUniqueId())?"§aTon claim":"§cClaim d'un autre joueur";button(i,(dz+2)*9+(dx+4),m,name,"§7Chunk : §f"+cx+" / "+cz,c==null?"§7Libre":"§fPropriétaire : §e"+owner(c));}button(i,45,Material.GRAY_DYE,"§7Libre");button(i,46,Material.LIME_DYE,"§aTon claim");button(i,47,Material.RED_DYE,"§cAutre claim");button(i,49,Material.COMPASS,"§ePosition actuelle","§7Centre de la carte");button(i,53,Material.BARRIER,"§cFermer");p.openInventory(i);}
- private String state(boolean b){return b?"§aActivé":"§cDésactivé";}private String owner(Claim c){String n=Bukkit.getOfflinePlayer(c.getOwner()).getName();return n==null?"Inconnu":n;}private void fill(Inventory i,Material m,String n){ItemStack x=new ItemStack(m);ItemMeta q=x.getItemMeta();if(q!=null){q.setDisplayName(n);x.setItemMeta(q);}for(int k=0;k<i.getSize();k++)if(i.getItem(k)==null)i.setItem(k,x.clone());}private void button(Inventory i,int s,Material m,String n,String...l){ItemStack x=new ItemStack(m);ItemMeta q=x.getItemMeta();if(q!=null){q.setDisplayName(n);q.setLore(Arrays.asList(l));x.setItemMeta(q);}i.setItem(s,x);}
- private boolean title(String t){return t.equals(MAIN)||t.equals(CLAIMS)||t.equals(FLAGS)||t.equals(HELP)||t.equals(MAP);}
- private final class InventoryListener implements Listener {@EventHandler public void click(InventoryClickEvent e){if(!(e.getWhoClicked() instanceof Player p)||!title(e.getView().getTitle()))return;e.setCancelled(true);int s=e.getRawSlot();String t=e.getView().getTitle();if(t.equals(MAIN)){if(s==10)openClaims(p);else if(s==13){Claim c=plugin.claims().atChunk(p.getWorld().getName(),p.getChunk().getX(),p.getChunk().getZ());if(c==null)p.performCommand("claim");else if(c.getOwner().equals(p.getUniqueId()))openFlags(p,c);}else if(s==16){Claim c=plugin.claims().at(p.getLocation());if(c!=null&&c.getOwner().equals(p.getUniqueId()))openFlags(p,c);}else if(s==22)openMap(p);else if(s==31)p.performCommand("claim info");else if(s==33)openHelp(p);else if(s==40)p.closeInventory();}else if(t.equals(FLAGS)){Claim c=flagClaims.get(p.getUniqueId());ClaimFlag f=s==10?ClaimFlag.PVP:s==12?ClaimFlag.FIRE:s==14?ClaimFlag.EXPLOSIONS:s==16?ClaimFlag.MOB_GRIEFING:s==22?ClaimFlag.ENTRY:null;if(c!=null&&f!=null){c.setFlag(f,!c.getFlag(f));plugin.claims().save();openFlags(p,c);}else if(s==40)openMain(p);}else if(t.equals(HELP)&&s==40)openMain(p);else if(t.equals(CLAIMS)){if(s==49)openMain(p);else if(s==53)p.closeInventory();}else if(t.equals(MAP)){if(s==53)p.closeInventory();else if(s>=0&&s<45){int row=s/9,col=s%9;int cx=p.getChunk().getX()+col-4,cz=p.getChunk().getZ()+row-2;Claim c=plugin.claims().atChunk(p.getWorld().getName(),cx,cz);if(c!=null)ClaimVisualizer.show(plugin,p,c,plugin.getConfig().getInt("map.visual-duration-ticks",100));}}}}
+    private static final String MAIN="§8§lNoxoClaim §7• Menu";
+    private static final String CLAIMS="§8§lNoxoClaim §7• Mes claims";
+    private static final String FLAGS="§8§lNoxoClaim §7• Protection";
+    private static final String HELP="§8§lNoxoClaim §7• Aide";
+    private static final String MAP="§8§lNoxoClaim §7• Carte";
+
+    private final NoxoClaim plugin;
+    private final Map<UUID, Claim> flagClaims = new HashMap<>();
+    private final Set<UUID> mapViewers = new HashSet<>();
+
+    public ClaimGui(NoxoClaim plugin) {
+        this.plugin = plugin;
+        plugin.getServer().getPluginManager().registerEvents(new InventoryListener(), plugin);
+
+        long refresh = Math.max(5L, plugin.getConfig().getLong("map.refresh.interval-ticks", 20L));
+        if (plugin.getConfig().getBoolean("map.refresh.enabled", true)) {
+            Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+                for (UUID uuid : new HashSet<>(mapViewers)) {
+                    Player p = Bukkit.getPlayer(uuid);
+                    if (p == null || !p.isOnline() || !MAP.equals(p.getOpenInventory().getTitle())) {
+                        mapViewers.remove(uuid);
+                        continue;
+                    }
+                    refreshMap(p);
+                }
+            }, refresh, refresh);
+        }
+    }
+
+    public void openMain(Player p) {
+        Inventory i=Bukkit.createInventory(null,45,MAIN);
+        fill(i,Material.GRAY_STAINED_GLASS_PANE," ");
+        Claim c=plugin.claims().atChunk(p.getWorld().getName(),p.getChunk().getX(),p.getChunk().getZ());
+        boolean own=c!=null&&c.getOwner().equals(p.getUniqueId());
+        button(i,13,Material.DIRT,c==null?"§a§lClaim ce chunk":own?"§a§lMon chunk":"§c§lChunk protégé",c==null?"§7Le chunk actuel sera protégé.":own?"§7Tu possèdes ce chunk.":"§7Propriétaire : §f"+owner(c));
+        button(i,10,Material.BOOK,"§b§lMes claims","§7Voir tous tes chunks claimés.");
+        button(i,16,Material.SHIELD,"§6§lProtections","§7Gérer les protections.");
+        button(i,22,Material.MAP,"§d§lCarte des claims","§7Voir et gérer les chunks autour de toi.");
+        button(i,31,Material.COMPASS,"§d§lInfos du chunk","§7Voir le propriétaire et l'état.");
+        button(i,33,Material.PAPER,"§f§lAide","§7Toutes les commandes.");
+        button(i,40,Material.BARRIER,"§c§lFermer","§7Fermer le menu.");
+        p.openInventory(i);
+    }
+
+    public void openClaims(Player p) {
+        List<Claim> cs=plugin.claims().owned(p.getUniqueId());
+        Inventory i=Bukkit.createInventory(null,54,CLAIMS);
+        fill(i,Material.GRAY_STAINED_GLASS_PANE," ");
+        int slot=10;
+        for(Claim c:cs){
+            if(slot>=44)break;
+            int cx=Math.floorDiv(c.getMinX(),16),cz=Math.floorDiv(c.getMinZ(),16);
+            button(i,slot++,Material.DIRT,"§a§lChunk "+cx+" / "+cz,"§7Monde : §f"+c.getWorld(),"§7Membres : §f"+c.getMembers().size(),"","§eClique pour te téléporter.");
+        }
+        if(cs.isEmpty())button(i,22,Material.DIRT,"§e§lAucun claim","§7Utilise §f/claim§7 dans un chunk libre.");
+        button(i,49,Material.ARROW,"§fRetour");
+        button(i,53,Material.BARRIER,"§cFermer");
+        p.openInventory(i);
+    }
+
+    public void openFlags(Player p,Claim c) {
+        if(c==null)return;
+        flagClaims.put(p.getUniqueId(),c);
+        Inventory i=Bukkit.createInventory(null,45,FLAGS);
+        fill(i,Material.GRAY_STAINED_GLASS_PANE," ");
+        button(i,10,c.getFlag(ClaimFlag.PVP)?Material.LIME_DYE:Material.GRAY_DYE,"§c⚔ PvP",state(c.getFlag(ClaimFlag.PVP)));
+        button(i,12,c.getFlag(ClaimFlag.FIRE)?Material.LIME_DYE:Material.GRAY_DYE,"§6🔥 Feu",state(c.getFlag(ClaimFlag.FIRE)));
+        button(i,14,c.getFlag(ClaimFlag.EXPLOSIONS)?Material.LIME_DYE:Material.GRAY_DYE,"§e💥 Explosions",state(c.getFlag(ClaimFlag.EXPLOSIONS)));
+        button(i,16,c.getFlag(ClaimFlag.MOB_GRIEFING)?Material.LIME_DYE:Material.GRAY_DYE,"§5👹 Grief des mobs",state(c.getFlag(ClaimFlag.MOB_GRIEFING)));
+        button(i,22,c.getFlag(ClaimFlag.ENTRY)?Material.LIME_DYE:Material.GRAY_DYE,"§b🚪 Entrée",state(c.getFlag(ClaimFlag.ENTRY)));
+        button(i,40,Material.ARROW,"§fRetour");
+        p.openInventory(i);
+    }
+
+    public void openHelp(Player p) {
+        Inventory i=Bukkit.createInventory(null,54,HELP);
+        fill(i,Material.BLACK_STAINED_GLASS_PANE," ");
+        button(i,10,Material.DIRT,"§a§l/claim","§7Claim le chunk actuel.");
+        button(i,12,Material.CHEST,"§b§l/claim menu","§7Ouvre le menu principal.");
+        button(i,14,Material.MAP,"§d§l/claim map","§7Ouvre la carte interactive.");
+        button(i,16,Material.END_ROD,"§e§l/claim voir","§7Affiche le contour en particules.");
+        button(i,28,Material.BOOK,"§f§l/claim list","§7Liste tes claims.");
+        button(i,30,Material.COMPASS,"§f§l/claim info","§7Informations du claim.");
+        button(i,32,Material.SHIELD,"§6§l/claim flags","§7Gère les protections.");
+        button(i,34,Material.PLAYER_HEAD,"§d§l/claim trust <joueur>","§7Ajoute un membre.");
+        button(i,40,Material.ARROW,"§fRetour");
+        p.openInventory(i);
+    }
+
+    public void openMap(Player p) {
+        mapViewers.add(p.getUniqueId());
+        refreshMap(p);
+    }
+
+    private void refreshMap(Player p) {
+        if (!p.isOnline()) {
+            mapViewers.remove(p.getUniqueId());
+            return;
+        }
+        int pcx=p.getChunk().getX(),pcz=p.getChunk().getZ();
+        Inventory i=Bukkit.createInventory(null,54,MAP);
+        fill(i,Material.BLACK_STAINED_GLASS_PANE," ");
+
+        for(int dz=-2;dz<=2;dz++) {
+            for(int dx=-4;dx<=4;dx++) {
+                int cx=pcx+dx,cz=pcz+dz;
+                Claim c=plugin.claims().atChunk(p.getWorld().getName(),cx,cz);
+                boolean own=c!=null&&c.getOwner().equals(p.getUniqueId());
+                Material m=c==null?Material.GRAY_CONCRETE:own?Material.LIME_CONCRETE:Material.RED_CONCRETE;
+                String name=c==null?"§7§lChunk libre":own?"§a§lTon claim":"§c§lClaim d'un autre joueur";
+                if(dx==0&&dz==0&&c==null) name="§e§lChunk actuel — libre";
+                button(i,(dz+2)*9+(dx+4),m,name,
+                        "§7Chunk : §f"+cx+" / "+cz,
+                        c==null?"§aClique pour claim ce chunk.":"§fPropriétaire : §e"+owner(c),
+                        "",
+                        c==null?"§e▶ Claim ce chunk":own?"§e▶ Gérer ce claim":"§e▶ Voir le claim");
+            }
+        }
+
+        button(i,45,Material.GRAY_DYE,"§7Libre","§7Zone disponible.");
+        button(i,46,Material.LIME_DYE,"§aTon claim","§7Tes zones protégées.");
+        button(i,47,Material.RED_DYE,"§cAutre claim","§7Zones appartenant à un autre joueur.");
+        button(i,48,Material.CLOCK,"§b§lActualisation automatique","§7La carte se met à jour automatiquement.","§7Intervalle : §f"+Math.max(5L,plugin.getConfig().getLong("map.refresh.interval-ticks",20L))+" ticks");
+        button(i,49,Material.COMPASS,"§ePosition actuelle","§7Centre de la carte","§7"+pcx+" / "+pcz);
+        button(i,50,Material.SUNFLOWER,"§6§lRafraîchir","§7Actualiser maintenant.");
+        button(i,53,Material.BARRIER,"§cFermer","§7Fermer la carte.");
+
+        p.openInventory(i);
+    }
+
+    private String state(boolean b){return b?"§aActivé":"§cDésactivé";}
+    private String owner(Claim c){String n=Bukkit.getOfflinePlayer(c.getOwner()).getName();return n==null?"Inconnu":n;}
+    private void fill(Inventory i,Material m,String n){ItemStack x=new ItemStack(m);ItemMeta q=x.getItemMeta();if(q!=null){q.setDisplayName(n);x.setItemMeta(q);}for(int k=0;k<i.getSize();k++)if(i.getItem(k)==null)i.setItem(k,x.clone());}
+    private void button(Inventory i,int s,Material m,String n,String...l){ItemStack x=new ItemStack(m);ItemMeta q=x.getItemMeta();if(q!=null){q.setDisplayName(n);q.setLore(Arrays.asList(l));x.setItemMeta(q);}i.setItem(s,x);}
+    private boolean title(String t){return t.equals(MAIN)||t.equals(CLAIMS)||t.equals(FLAGS)||t.equals(HELP)||t.equals(MAP);}
+
+    private final class InventoryListener implements Listener {
+        @EventHandler
+        public void click(InventoryClickEvent e){
+            if(!(e.getWhoClicked() instanceof Player p)||!title(e.getView().getTitle()))return;
+            e.setCancelled(true);
+            int s=e.getRawSlot();
+            if(s<0||s>=e.getView().getTopInventory().getSize())return;
+            String t=e.getView().getTitle();
+
+            if(t.equals(MAIN)){
+                if(s==10)openClaims(p);
+                else if(s==13){
+                    Claim c=plugin.claims().atChunk(p.getWorld().getName(),p.getChunk().getX(),p.getChunk().getZ());
+                    if(c==null)p.performCommand("claim");
+                    else if(c.getOwner().equals(p.getUniqueId()))openFlags(p,c);
+                }else if(s==16){
+                    Claim c=plugin.claims().at(p.getLocation());
+                    if(c!=null&&c.getOwner().equals(p.getUniqueId()))openFlags(p,c);
+                }else if(s==22)openMap(p);
+                else if(s==31)p.performCommand("claim info");
+                else if(s==33)openHelp(p);
+                else if(s==40)p.closeInventory();
+            }else if(t.equals(FLAGS)){
+                Claim c=flagClaims.get(p.getUniqueId());
+                ClaimFlag f=s==10?ClaimFlag.PVP:s==12?ClaimFlag.FIRE:s==14?ClaimFlag.EXPLOSIONS:s==16?ClaimFlag.MOB_GRIEFING:s==22?ClaimFlag.ENTRY:null;
+                if(c!=null&&f!=null){
+                    if(!c.getOwner().equals(p.getUniqueId())){p.sendMessage("§c§lNoxoClaim §8» §fTu n'es pas propriétaire de ce claim.");return;}
+                    c.setFlag(f,!c.getFlag(f));
+                    plugin.claims().save();
+                    openFlags(p,c);
+                }else if(s==40)openMain(p);
+            }else if(t.equals(HELP)&&s==40)openMain(p);
+            else if(t.equals(CLAIMS)){
+                if(s==49)openMain(p);
+                else if(s==53)p.closeInventory();
+            }else if(t.equals(MAP)){
+                if(s==53){
+                    mapViewers.remove(p.getUniqueId());
+                    p.closeInventory();
+                    return;
+                }
+                if(s==50){refreshMap(p);return;}
+                if(s>=0&&s<45){
+                    int row=s/9,col=s%9;
+                    int cx=p.getChunk().getX()+col-4,cz=p.getChunk().getZ()+row-2;
+                    Claim c=plugin.claims().atChunk(p.getWorld().getName(),cx,cz);
+                    if(c==null){
+                        p.performCommand("claim");
+                        Bukkit.getScheduler().runTask(plugin,()->refreshMap(p));
+                    }else if(c.getOwner().equals(p.getUniqueId())){
+                        openFlags(p,c);
+                    }else{
+                        p.sendMessage("§c§lNoxoClaim §8» §fCe claim appartient à §e"+owner(c)+"§f.");
+                        ClaimVisualizer.show(plugin,p,c,plugin.getConfig().getInt("map.visual-duration-ticks",100));
+                    }
+                }
+            }
+        }
+
+        @EventHandler
+        public void close(InventoryCloseEvent e){
+            if(e.getPlayer() instanceof Player p && MAP.equals(e.getView().getTitle())) {
+                mapViewers.remove(p.getUniqueId());
+            }
+        }
+    }
 }
