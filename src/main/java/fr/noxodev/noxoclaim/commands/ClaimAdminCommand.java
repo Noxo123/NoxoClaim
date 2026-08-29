@@ -88,7 +88,18 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage("§c[NoxoClaim] Le système de mise à jour n'est pas disponible.");
                     return true;
                 }
-                plugin.updateChecker().checkManual(sender);
+                if (args.length > 2) {
+                    sender.sendMessage("§cUsage: /claimadmin update [commit]");
+                    sender.sendMessage("§7Exemple: /claimadmin update 2c9cc6ab4a8f22ce6c4c29267934ba3da5765ded");
+                    return true;
+                }
+
+                String requestedCommit = args.length == 2 ? args[1].trim() : null;
+                if (requestedCommit != null && !requestedCommit.matches("(?i)[0-9a-f]{40}")) {
+                    sender.sendMessage("§c[NoxoClaim] Commit invalide. Utilise le SHA complet de 40 caractères.");
+                    return true;
+                }
+                plugin.updateChecker().checkManual(sender, requestedCommit);
             }
 
             case "debug" -> {
@@ -135,7 +146,7 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         s.sendMessage("§7/claimadmin reload");
         s.sendMessage("§7/claimadmin status");
         s.sendMessage("§7/claimadmin debug");
-        s.sendMessage("§7/claimadmin update");
+        s.sendMessage("§7/claimadmin update [commit]");
     }
 
     @Override
