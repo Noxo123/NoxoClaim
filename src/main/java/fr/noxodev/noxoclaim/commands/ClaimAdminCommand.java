@@ -1,6 +1,7 @@
 package fr.noxodev.noxoclaim.commands;
 
 import fr.noxodev.noxoclaim.NoxoClaim;
+import org.bukkit.Bukkit;
 import org.bukkit.command.*;
 import java.util.*;
 
@@ -24,12 +25,24 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
                 catch (IllegalArgumentException e) { sender.sendMessage("§cUUID invalide."); }
             }
             case "save" -> { plugin.claims().save(); sender.sendMessage("§aClaims sauvegardés."); }
-            case "reload" -> { plugin.reloadConfig(); sender.sendMessage("§aConfiguration rechargée."); }
+            case "reload" -> {
+                if (!sender.hasPermission("noxoclaim.admin.reload")) { plugin.messages().send(sender, "no-permission"); return true; }
+                plugin.reloadConfig();
+                sender.sendMessage("§a[NoxoClaim] Configuration rechargée. Les claims restent en mémoire.");
+            }
+            case "status", "info" -> {
+                sender.sendMessage("§b§lNoxoClaim — Status");
+                sender.sendMessage("§7Version: §f" + plugin.getDescription().getVersion());
+                sender.sendMessage("§7Paper: §f" + Bukkit.getVersion());
+                sender.sendMessage("§7Vault: " + (plugin.economy() != null ? "§aOK" : "§cAbsent"));
+                sender.sendMessage("§7PlugManX: " + (plugin.isPlugManXAvailable() ? "§aDétecté" : "§7Absent"));
+                sender.sendMessage("§7Claims: §f" + plugin.claims().all().size());
+                var update = plugin.updateInfo();
+                sender.sendMessage("§7Update: " + (update == null ? "§eNon vérifiée" : update.available() ? "§eDisponible (" + update.latestVersion() + ")" : "§aÀ jour"));
+            }
             case "update", "updates" -> {
-                if (plugin.updateChecker() == null) {
-                    sender.sendMessage("§c[NoxoClaim] Le système de mise à jour n'est pas disponible.");
-                    return true;
-                }
+                if (!sender.hasPermission("noxoclaim.admin.update")) { plugin.messages().send(sender, "no-permission"); return true; }
+                if (plugin.updateChecker() == null) { sender.sendMessage("§c[NoxoClaim] Le système de mise à jour n'est pas disponible."); return true; }
                 plugin.updateChecker().checkManual(sender);
             }
             default -> help(sender);
@@ -44,11 +57,12 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         s.sendMessage("§7/claimadmin deleteall <uuid>");
         s.sendMessage("§7/claimadmin save");
         s.sendMessage("§7/claimadmin reload");
+        s.sendMessage("§7/claimadmin status");
         s.sendMessage("§7/claimadmin update");
     }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
-        if (args.length == 1) return List.of("list", "delete", "deleteall", "save", "reload", "update").stream().filter(x -> x.startsWith(args[0].toLowerCase())).toList();
+        if (args.length == 1) return List.of("list", "delete", "deleteall", "save", "reload", "status", "info", "update").stream().filter(x -> x.startsWith(args[0].toLowerCase(Locale.ROOT))).toList();
         return List.of();
     }
 }
