@@ -2,6 +2,8 @@ package fr.noxodev.noxoclaim;
 
 import fr.noxodev.noxoclaim.commands.*;
 import fr.noxodev.noxoclaim.gui.ClaimGui;
+import fr.noxodev.noxoclaim.hud.HudEngineInstaller;
+import fr.noxodev.noxoclaim.hud.HudEngineIntegration;
 import fr.noxodev.noxoclaim.listeners.ClaimProtectionListener;
 import fr.noxodev.noxoclaim.managers.*;
 import fr.noxodev.noxoclaim.map.ClaimMapIntegration;
@@ -23,6 +25,7 @@ public final class NoxoClaim extends JavaPlugin {
     private UpdateInfo updateInfo;
     private ClaimMapIntegration mapIntegration;
     private UpdateChecker updateChecker;
+    private HudEngineIntegration hudEngine;
     private boolean plugManX;
 
     @Override public void onEnable() {
@@ -35,6 +38,12 @@ public final class NoxoClaim extends JavaPlugin {
         detectPlugManX();
         getServer().getPluginManager().registerEvents(new ClaimProtectionListener(this), this);
         mapIntegration = new ClaimMapIntegration(this);
+
+        // HUDEngine is optional at runtime. If missing, install the pinned and SHA-256 verified
+        // plugin for the next restart, while NoxoClaim itself keeps working normally.
+        HudEngineInstaller.ensureInstalled(this);
+        hudEngine = new HudEngineIntegration(this);
+        hudEngine.start();
 
         ClaimGui gui = new ClaimGui(this);
         ClaimCommand command = new ClaimCommand(this, gui);
@@ -52,7 +61,7 @@ public final class NoxoClaim extends JavaPlugin {
         }
         startUpdateChecker();
         getLogger().info("NoxoClaim " + getDescription().getVersion() + " activé.");
-        getLogger().info("Modules: protection=OK, map=OK, economy=" + (economy != null ? "OK" : "indisponible") + ", PlugManX=" + (plugManX ? "OK" : "absent") + ".");
+        getLogger().info("Modules: protection=OK, map=OK, economy=" + (economy != null ? "OK" : "indisponible") + ", PlugManX=" + (plugManX ? "OK" : "absent") + ", HUDEngine=" + (getServer().getPluginManager().getPlugin("HUDEngine") != null ? "OK" : "en attente") + ".");
     }
 
     private void detectPlugManX() {
@@ -76,6 +85,7 @@ public final class NoxoClaim extends JavaPlugin {
     public void setUpdateInfo(UpdateInfo info) { updateInfo = info; Bukkit.getScheduler().runTask(this, this::notifyAdmins); }
     public UpdateInfo updateInfo() { return updateInfo; }
     public UpdateChecker updateChecker() { return updateChecker; }
+    public HudEngineIntegration hudEngine() { return hudEngine; }
     private void register(String name, ClaimCommand executor) { if (getCommand(name) != null) { getCommand(name).setExecutor(executor); getCommand(name).setTabCompleter(executor); } }
     private void setupEconomy() {
         economy = null;
