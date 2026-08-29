@@ -1,5 +1,5 @@
 name: NoxoClaim
-version: 2.0.0
+version: 2.0.1
 main: fr.noxodev.noxoclaim.NoxoClaim
 api-version: '26.1'
 author: NoxoDEV
@@ -7,30 +7,37 @@ description: Système professionnel de protection et gestion de claims pour Pape
 website: https://github.com/Noxo123/NoxoClaim
 softdepend:
   - Vault
+  - LuckPerms
 commands:
+  claim:
+    description: Claim le chunk actuel ou ouvre le menu
+    usage: /claim [menu|list|info|flags|trust|untrust|sethome|home|unclaim]
   hclaim:
-    description: Ouvre NoxoClaim ou gère le claim actuel
-    usage: /hclaim [list|info|flags|trust|untrust|help]
+    description: Alias de gestion NoxoClaim
+    usage: /hclaim [menu|list|info|flags|trust|untrust|sethome|home|unclaim]
   uclaim:
     description: Retire le claim actuel
     usage: /uclaim
   map:
-    description: Ouvre la carte et le menu NoxoClaim
+    description: Ouvre la carte NoxoClaim
     usage: /map
-  claim:
-    description: Commande principale NoxoClaim
-    usage: /claim
   chome:
-    description: Ouvre tes claims et téléporte vers un claim
+    description: Gère les homes de claims
     usage: /chome <nom|list>
   claimadmin:
-    description: Administration professionnelle de NoxoClaim
+    description: Administration NoxoClaim
     usage: /claimadmin <list|delete|deleteall|save|reload|update>
     permission: noxoclaim.admin
 permissions:
   noxoclaim.admin:
-    description: Accès à l'administration NoxoClaim
+    description: Accès complet à NoxoClaim
     default: op
   noxoclaim.bypass:
     description: Ignore les protections NoxoClaim
     default: op
+  noxoclaim.claim:
+    description: Autorise le joueur à créer un claim
+    default: false
+  noxoclaim.autoclaim:
+    description: Autorise le joueur à bénéficier du claim automatique
+    default: false
