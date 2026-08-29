@@ -15,6 +15,19 @@ teleport:
   delay-seconds: 3
   cancel-on-move: true
 
+effects:
+  particles:
+    enabled: true
+    type: HAPPY_VILLAGER
+    duration-ticks: 80
+  welcome-title:
+    enabled: true
+    title: "§b§lBienvenue !"
+    subtitle: "§7Ce chunk vous appartient maintenant ✨"
+    fade-in: 10
+    stay: 50
+    fade-out: 15
+
 storage:
   file: claims.yml
   autosave-seconds: 300
