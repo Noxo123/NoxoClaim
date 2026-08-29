@@ -10,10 +10,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.*;
 
-/**
- * High-performance claim registry. Spatial lookups are indexed by world/chunk,
- * while the YAML file remains compatible with the existing storage format.
- */
+/** High-performance claim registry with O(1) chunk lookups. */
 public final class ClaimManager {
     private final File file;
     private final Map<UUID, Claim> claims = new LinkedHashMap<>();
@@ -36,9 +33,7 @@ public final class ClaimManager {
     }
 
     public Claim atChunk(String world, int chunkX, int chunkZ) {
-        Claim indexed = chunkIndex.get(new ChunkKey(world, chunkX, chunkZ));
-        if (indexed != null && indexed.contains(new Location(resolveWorld(world), chunkX * 16 + 8, 0, chunkZ * 16 + 8))) return indexed;
-        return null;
+        return chunkIndex.get(new ChunkKey(world, chunkX, chunkZ));
     }
 
     public boolean overlaps(Claim candidate) {
@@ -60,15 +55,16 @@ public final class ClaimManager {
     }
 
     public void add(Claim claim) {
-        if (claim == null || overlaps(claim)) throw new IllegalArgumentException("Claim overlaps an existing claim");
+        Objects.requireNonNull(claim, "claim");
+        if (claims.containsKey(claim.getId())) throw new IllegalArgumentException("Claim ID already exists");
+        if (overlaps(claim)) throw new IllegalArgumentException("Claim overlaps an existing claim");
         claims.put(claim.getId(), claim);
         index(claim);
         save();
     }
 
     public void remove(Claim claim) {
-        if (claim == null) return;
-        claims.remove(claim.getId());
+        if (claim == null || claims.remove(claim.getId()) == null) return;
         unindex(claim);
         save();
     }
@@ -80,14 +76,14 @@ public final class ClaimManager {
 
     private void index(Claim c) {
         ownerIndex.computeIfAbsent(c.getOwner(), k -> new HashSet<>()).add(c.getId());
-        int minX = c.getMinX() >> 4, maxX = c.getMaxX() >> 4;
-        int minZ = c.getMinZ() >> 4, maxZ = c.getMaxZ() >> 4;
+        int minX = Math.floorDiv(c.getMinX(), 16), maxX = Math.floorDiv(c.getMaxX(), 16);
+        int minZ = Math.floorDiv(c.getMinZ(), 16), maxZ = Math.floorDiv(c.getMaxZ(), 16);
         for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) chunkIndex.put(new ChunkKey(c.getWorld(), x, z), c);
     }
 
     private void unindex(Claim c) {
-        int minX = c.getMinX() >> 4, maxX = c.getMaxX() >> 4;
-        int minZ = c.getMinZ() >> 4, maxZ = c.getMaxZ() >> 4;
+        int minX = Math.floorDiv(c.getMinX(), 16), maxX = Math.floorDiv(c.getMaxX(), 16);
+        int minZ = Math.floorDiv(c.getMinZ(), 16), maxZ = Math.floorDiv(c.getMaxZ(), 16);
         for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) chunkIndex.remove(new ChunkKey(c.getWorld(), x, z), c);
         Set<UUID> ids = ownerIndex.get(c.getOwner());
         if (ids != null) { ids.remove(c.getId()); if (ids.isEmpty()) ownerIndex.remove(c.getOwner()); }
@@ -95,17 +91,12 @@ public final class ClaimManager {
 
     private record ChunkKey(String world, int x, int z) {}
 
-    private World resolveWorld(String name) {
-        return org.bukkit.Bukkit.getWorld(name);
-    }
-
     public void save() {
         YamlConfiguration y = new YamlConfiguration();
         for (Claim c : claims.values()) {
             String p = "claims." + c.getId();
-            y.set(p + ".owner", c.getOwner().toString()); y.set(p + ".name", c.getName());
-            y.set(p + ".world", c.getWorld()); y.set(p + ".minX", c.getMinX()); y.set(p + ".minZ", c.getMinZ());
-            y.set(p + ".maxX", c.getMaxX()); y.set(p + ".maxZ", c.getMaxZ());
+            y.set(p + ".owner", c.getOwner().toString()); y.set(p + ".name", c.getName()); y.set(p + ".world", c.getWorld());
+            y.set(p + ".minX", c.getMinX()); y.set(p + ".minZ", c.getMinZ()); y.set(p + ".maxX", c.getMaxX()); y.set(p + ".maxZ", c.getMaxZ());
             y.set(p + ".members", c.getMembers().stream().map(UUID::toString).toList());
             for (var entry : c.getFlags().entrySet()) y.set(p + ".flags." + entry.getKey(), entry.getValue());
             if (c.getHome() != null) {
@@ -131,7 +122,7 @@ public final class ClaimManager {
             for (String member : y.getStringList(p + ".members")) c.addMember(UUID.fromString(member));
             for (ClaimFlag flag : ClaimFlag.values()) if (y.contains(p + ".flags." + flag)) c.setFlag(flag, y.getBoolean(p + ".flags." + flag));
             if (y.contains(p + ".home.x")) {
-                World w = resolveWorld(y.getString(p + ".home.world", c.getWorld()));
+                World w = org.bukkit.Bukkit.getWorld(y.getString(p + ".home.world", c.getWorld()));
                 if (w != null) c.setHome(new Location(w, y.getDouble(p + ".home.x"), y.getDouble(p + ".home.y"), y.getDouble(p + ".home.z"),
                         (float)y.getDouble(p + ".home.yaw"), (float)y.getDouble(p + ".home.pitch")));
             }
