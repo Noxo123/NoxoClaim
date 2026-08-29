@@ -11,7 +11,21 @@ claim:
     mob-griefing: false
     entry: true
 
-economy:
+  protection:
+    blocks: true
+    containers: true
+    doors: true
+    buttons: true
+    redstone: true
+    entities: true
+    projectiles: true
+    pistons: true
+
+  limits:
+    allow-adjacent: true
+    allow-overlap: false
+
+ economy:
   enabled: true
   cost-per-chunk: 500.0
 
@@ -37,6 +51,7 @@ effects:
 
 map:
   visual-radius: 32
+  max-visual-radius: 64
   visual-duration-ticks: 120
   particles:
     type: END_ROD
@@ -44,11 +59,19 @@ map:
 storage:
   file: claims.yml
   autosave-seconds: 300
+  backups: true
+  backup-count: 5
 
 updates:
   enabled: true
   check-on-startup: true
   check-interval-hours: 1
   auto-update: true
+  verify-sha256: true
   notify-console: true
   notify-admins: true
+  download-timeout-seconds: 120
+
+plugman:
+  enabled: true
+  auto-detect: true
