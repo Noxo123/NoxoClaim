@@ -48,6 +48,7 @@ storage:
 updates:
   enabled: true
   check-on-startup: true
-  check-interval-hours: 6
+  check-interval-minutes: 30
+  auto-update: true
   notify-console: true
   notify-admins: true
