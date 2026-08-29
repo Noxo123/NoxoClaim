@@ -58,6 +58,14 @@ jobs:
           path: build/libs/*.jar
           if-no-files-found: error
 
+      - name: Point nightly tag to current commit
+        if: success() && github.event_name == 'push' && matrix.paper-api == '26.2.build.+'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f nightly "${GITHUB_SHA}"
+          git push -f origin nightly
+
       - name: Publish nightly update
         if: success() && github.event_name == 'push' && matrix.paper-api == '26.2.build.+'
         uses: softprops/action-gh-release@v2
@@ -71,4 +79,3 @@ jobs:
           make_latest: false
           files: build/libs/*.jar
           overwrite_files: true
-          target_commitish: ${{ github.sha }}
