@@ -2,6 +2,7 @@ package fr.noxodev.noxoclaim.update;
 
 import fr.noxodev.noxoclaim.NoxoClaim;
 import org.bukkit.Bukkit;
+import org.bukkit.command.CommandSender;
 
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -34,24 +35,48 @@ public final class UpdateChecker {
     public UpdateChecker(NoxoClaim plugin) { this.plugin = plugin; }
 
     public void check(boolean notifyConsole) {
-        if (!plugin.getConfig().getBoolean("updates.enabled", true) || checking) return;
+        checkInternal(notifyConsole, null);
+    }
+
+    /** Manual check used by /claimadmin update. It ignores the automatic-check toggle. */
+    public void checkManual(CommandSender sender) {
+        if (checking) {
+            sender.sendMessage("§e[NoxoClaim] Une vérification des mises à jour est déjà en cours.");
+            return;
+        }
+        sender.sendMessage("§b[NoxoClaim] Vérification des mises à jour GitHub...");
+        checkInternal(true, sender);
+    }
+
+    private void checkInternal(boolean notifyConsole, CommandSender manualSender) {
+        if (checking) {
+            if (manualSender != null) manualSender.sendMessage("§e[NoxoClaim] Une vérification est déjà en cours.");
+            return;
+        }
+        if (manualSender == null && !plugin.getConfig().getBoolean("updates.enabled", true)) return;
         checking = true;
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 String remoteCommit = fetchMainCommit();
                 String localCommit = getBuildCommit();
                 if (remoteCommit.equalsIgnoreCase(localCommit) || remoteCommit.equalsIgnoreCase(lastDownloadedCommit)) {
-                    if (notifyConsole) plugin.getLogger().info("NoxoClaim est à jour (commit " + shortSha(remoteCommit) + ").");
+                    String message = "§a[NoxoClaim] NoxoClaim est à jour (commit " + shortSha(remoteCommit) + ").";
+                    sendManual(manualSender, message);
+                    if (notifyConsole && manualSender == null) plugin.getLogger().info(strip(message));
                     return;
                 }
 
                 Release release = fetchNightlyRelease();
                 if (release == null || release.downloadUrl == null) {
-                    if (notifyConsole) plugin.getLogger().info("Nouveau commit détecté, mais le build automatique n'est pas encore disponible.");
+                    String message = "§e[NoxoClaim] Nouveau commit détecté, mais le build automatique n'est pas encore disponible.";
+                    sendManual(manualSender, message);
+                    if (notifyConsole && manualSender == null) plugin.getLogger().info(strip(message));
                     return;
                 }
                 if (release.commit != null && !remoteCommit.equalsIgnoreCase(release.commit)) {
-                    if (notifyConsole) plugin.getLogger().info("Le build nightly est encore en cours pour le commit " + shortSha(remoteCommit) + ".");
+                    String message = "§e[NoxoClaim] Le build nightly est encore en cours pour le commit " + shortSha(remoteCommit) + ".";
+                    sendManual(manualSender, message);
+                    if (notifyConsole && manualSender == null) plugin.getLogger().info(strip(message));
                     return;
                 }
 
@@ -59,14 +84,25 @@ public final class UpdateChecker {
                 if (plugin.getConfig().getBoolean("updates.auto-update", true)) {
                     downloadUpdate(release.downloadUrl, remoteCommit);
                     lastDownloadedCommit = remoteCommit;
-                } else if (notifyConsole) {
-                    plugin.getLogger().warning("Nouvelle mise à jour disponible : commit " + shortSha(remoteCommit));
+                    sendManual(manualSender, "§a[NoxoClaim] ✓ Mise à jour téléchargée pour le commit §f" + shortSha(remoteCommit) + "§a. Redémarrez le serveur pour l'appliquer.");
+                } else {
+                    String message = "§e[NoxoClaim] Nouvelle mise à jour disponible : commit " + shortSha(remoteCommit);
+                    sendManual(manualSender, message);
+                    if (notifyConsole && manualSender == null) plugin.getLogger().warning(strip(message));
                 }
             } catch (Exception e) {
-                if (notifyConsole) plugin.getLogger().warning("Vérification des mises à jour impossible : " + e.getMessage());
+                String message = "§c[NoxoClaim] Vérification des mises à jour impossible : " + e.getMessage();
+                sendManual(manualSender, message);
+                if (notifyConsole && manualSender == null) plugin.getLogger().warning(strip(message));
             } finally { checking = false; }
         });
     }
+
+    private void sendManual(CommandSender sender, String message) {
+        if (sender != null) Bukkit.getScheduler().runTask(plugin, () -> sender.sendMessage(message));
+    }
+
+    private static String strip(String message) { return message.replaceAll("§.", ""); }
 
     private String fetchMainCommit() throws Exception {
         String json = request(COMMIT_API);
