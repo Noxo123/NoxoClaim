@@ -1,31 +1,36 @@
 name: NoxoClaim
-version: 1.3.0
+version: 2.0.0
 main: fr.noxodev.noxoclaim.NoxoClaim
 api-version: '26.1'
 author: NoxoDEV
-description: Système de claims simple par chunks pour Paper 26.1 et 26.2.
+description: Système professionnel de protection et gestion de claims pour Paper.
+website: https://github.com/Noxo123/NoxoClaim
 softdepend:
   - Vault
 commands:
   hclaim:
-    description: Ouvre NoxoClaim ou gère le chunk actuel
+    description: Ouvre NoxoClaim ou gère le claim actuel
     usage: /hclaim [list|info|flags|trust|untrust|help]
   uclaim:
-    description: Retire le claim du chunk actuel
+    description: Retire le claim actuel
     usage: /uclaim
   map:
-    description: Ouvre le menu NoxoClaim
+    description: Ouvre la carte et le menu NoxoClaim
     usage: /map
   claim:
-    description: Alias de /hclaim
+    description: Commande principale NoxoClaim
     usage: /claim
   chome:
-    description: Ouvre tes claims et téléporte vers un claim nommé
+    description: Ouvre tes claims et téléporte vers un claim
     usage: /chome <nom|list>
   claimadmin:
-    description: Administration des claims
-    usage: /claimadmin <list|delete>
+    description: Administration professionnelle de NoxoClaim
+    usage: /claimadmin <list|delete|deleteall|save|reload|update>
     permission: noxoclaim.admin
 permissions:
-  noxoclaim.admin: { default: op }
-  noxoclaim.bypass: { default: op }
+  noxoclaim.admin:
+    description: Accès à l'administration NoxoClaim
+    default: op
+  noxoclaim.bypass:
+    description: Ignore les protections NoxoClaim
+    default: op
