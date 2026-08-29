@@ -6,10 +6,22 @@ claim:
     fire: false
     mob-griefing: false
     entry: true
+
 economy:
+  enabled: true
   cost-per-chunk: 500.0
+
 teleport:
   delay-seconds: 3
   cancel-on-move: true
+
 storage:
   file: claims.yml
+  autosave-seconds: 300
+
+updates:
+  enabled: true
+  check-on-startup: true
+  check-interval-hours: 6
+  notify-console: true
+  notify-admins: true
