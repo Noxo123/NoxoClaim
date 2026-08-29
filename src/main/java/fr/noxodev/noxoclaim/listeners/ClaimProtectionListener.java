@@ -2,7 +2,6 @@ package fr.noxodev.noxoclaim.listeners;
 
 import fr.noxodev.noxoclaim.NoxoClaim;
 import fr.noxodev.noxoclaim.effects.ClaimEffects;
-import fr.noxodev.noxoclaim.effects.ClaimVisualizer;
 import fr.noxodev.noxoclaim.models.*;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
@@ -12,12 +11,18 @@ import org.bukkit.event.block.*;
 import org.bukkit.event.entity.*;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 /** Central protection and automatic-claim listener. */
 public final class ClaimProtectionListener implements Listener {
     private final NoxoClaim plugin;
+    private final Map<UUID, UUID> lastClaimOwners = new HashMap<>();
+
     public ClaimProtectionListener(NoxoClaim plugin){this.plugin=plugin;}
 
     private boolean allowed(Player player, Location location){
@@ -44,16 +49,35 @@ public final class ClaimProtectionListener implements Listener {
     @EventHandler public void move(PlayerMoveEvent e){
         if(e.getTo()==null)return;
         if(e.getFrom().getWorld()==e.getTo().getWorld()&&e.getFrom().getChunk().getX()==e.getTo().getChunk().getX()&&e.getFrom().getChunk().getZ()==e.getTo().getChunk().getZ())return;
-        Player p=e.getPlayer(); Claim previous=plugin.claims().at(e.getFrom()); Claim current=plugin.claims().at(e.getTo());
+        Player p=e.getPlayer();
+        Claim previous=plugin.claims().at(e.getFrom());
+        Claim current=plugin.claims().at(e.getTo());
+
         if(current!=null&&!current.getFlag(ClaimFlag.ENTRY)&&protectedAgainst(current,p)){
             e.setTo(e.getFrom());
             return;
         }
-        if(current!=null&&previous!=current&&plugin.getConfig().getBoolean("effects.welcome-title.enabled",true)) ClaimEffects.showWelcome(plugin,p,current);
+
+        UUID currentOwner=current==null?null:current.getOwner();
+        UUID previousOwner=lastClaimOwners.get(p.getUniqueId());
+
+        // Only show the welcome title when the territory owner actually changes.
+        // Moving between adjacent chunks belonging to the same owner must not spam the player.
+        if(!lastClaimOwners.containsKey(p.getUniqueId()) || !Objects.equals(previousOwner,currentOwner)){
+            lastClaimOwners.put(p.getUniqueId(),currentOwner);
+            if(current!=null&&plugin.getConfig().getBoolean("effects.welcome-title.enabled",true)){
+                ClaimEffects.showWelcome(plugin,p,current);
+            }
+        }
+
         if(current==null && plugin.getConfig().getBoolean("claim.auto-claim.enabled",true) && p.hasPermission(plugin.getConfig().getString("claim.auto-claim.permission","noxoclaim.autoclaim")) && !p.hasPermission("noxoclaim.bypass")){
             if(!plugin.getConfig().getBoolean("claim.auto-claim.first-only",false) || plugin.claims().owned(p.getUniqueId()).isEmpty()){
                 plugin.getCommand("claim").getExecutor().onCommand(p,plugin.getCommand("claim"),"claim",new String[0]);
             }
         }
+    }
+
+    @EventHandler public void quit(PlayerQuitEvent event){
+        lastClaimOwners.remove(event.getPlayer().getUniqueId());
     }
 }
