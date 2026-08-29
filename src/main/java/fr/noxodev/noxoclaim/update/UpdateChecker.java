@@ -13,27 +13,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Commit-based updater. It detects the current main commit, verifies the
- * matching nightly release asset, and places the new jar in Paper's update
- * directory. The running jar is never replaced in-place.
- */
+/** Commit-based updater. Never replaces the running plugin jar in-place. */
 public final class UpdateChecker {
     private static final String API = "https://api.github.com/repos/Noxo123/NoxoClaim";
     private static final String COMMIT_API = API + "/commits/main";
     private static final String RELEASE_API = API + "/releases/tags/nightly";
+    private static final String TAG_API = API + "/git/ref/tags/nightly";
     private static final String RELEASE_PAGE = "https://github.com/Noxo123/NoxoClaim/releases/tag/nightly";
     private static final Pattern SHA = Pattern.compile("\"sha\"\\s*:\\s*\"([0-9a-fA-F]{40})\"");
     private static final Pattern ASSET = Pattern.compile("\\{[^{}]*?\"name\"\\s*:\\s*\"([^\"]+\\.jar)\"[^{}]*?\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"[^{}]*?\\}");
-
     private final NoxoClaim plugin;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private volatile boolean checking;
+    private volatile String lastDownloadedCommit;
 
     public UpdateChecker(NoxoClaim plugin) { this.plugin = plugin; }
 
@@ -44,36 +40,31 @@ public final class UpdateChecker {
             try {
                 String remoteCommit = fetchMainCommit();
                 String localCommit = getBuildCommit();
-
-                if (remoteCommit.equalsIgnoreCase(localCommit)) {
+                if (remoteCommit.equalsIgnoreCase(localCommit) || remoteCommit.equalsIgnoreCase(lastDownloadedCommit)) {
                     if (notifyConsole) plugin.getLogger().info("NoxoClaim est à jour (commit " + shortSha(remoteCommit) + ").");
                     return;
                 }
 
                 Release release = fetchNightlyRelease();
                 if (release == null || release.downloadUrl == null) {
-                    plugin.getLogger().warning("Nouveau commit détecté (" + shortSha(remoteCommit) + "), mais aucun JAR de mise à jour n'est encore disponible. Le build GitHub est probablement en cours.");
+                    if (notifyConsole) plugin.getLogger().info("Nouveau commit détecté, mais le build automatique n'est pas encore disponible.");
                     return;
                 }
-
                 if (release.commit != null && !remoteCommit.equalsIgnoreCase(release.commit)) {
-                    plugin.getLogger().warning("Le build nightly n'est pas encore au dernier commit. Mise à jour reportée.");
+                    if (notifyConsole) plugin.getLogger().info("Le build nightly est encore en cours pour le commit " + shortSha(remoteCommit) + ".");
                     return;
                 }
 
-                UpdateInfo info = new UpdateInfo(true, plugin.getDescription().getVersion(), release.version, RELEASE_PAGE, "Commit " + shortSha(remoteCommit));
-                plugin.setUpdateInfo(info);
-
+                plugin.setUpdateInfo(new UpdateInfo(true, plugin.getDescription().getVersion(), release.version, RELEASE_PAGE, "Commit " + shortSha(remoteCommit)));
                 if (plugin.getConfig().getBoolean("updates.auto-update", true)) {
                     downloadUpdate(release.downloadUrl, remoteCommit);
+                    lastDownloadedCommit = remoteCommit;
                 } else if (notifyConsole) {
                     plugin.getLogger().warning("Nouvelle mise à jour disponible : commit " + shortSha(remoteCommit));
                 }
             } catch (Exception e) {
                 if (notifyConsole) plugin.getLogger().warning("Vérification des mises à jour impossible : " + e.getMessage());
-            } finally {
-                checking = false;
-            }
+            } finally { checking = false; }
         });
     }
 
@@ -87,10 +78,15 @@ public final class UpdateChecker {
     private Release fetchNightlyRelease() throws Exception {
         String json = request(RELEASE_API);
         String tag = match("\"tag_name\"\\s*:\\s*\"([^\"]+)\"", json);
-        String target = match("\"target_commitish\"\\s*:\\s*\"([^\"]+)\"", json);
         Matcher assets = ASSET.matcher(json);
         if (!assets.find()) return null;
-        return new Release(tag == null ? "nightly" : tag, assets.group(2), target);
+
+        String commit = null;
+        try {
+            String ref = request(TAG_API);
+            commit = match("\"sha\"\\s*:\\s*\"([0-9a-fA-F]{40})\"", ref);
+        } catch (Exception ignored) { }
+        return new Release(tag == null ? "nightly" : tag, assets.group(2), commit);
     }
 
     private void downloadUpdate(String url, String commit) throws Exception {
@@ -104,27 +100,26 @@ public final class UpdateChecker {
         HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() != 200) throw new IllegalStateException("Téléchargement HTTP " + response.statusCode());
 
-        try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) {
-            in.transferTo(out);
-        }
+        try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) { in.transferTo(out); }
         if (Files.size(temp) < 10_000) {
             Files.deleteIfExists(temp);
             throw new IllegalStateException("JAR téléchargé invalide");
         }
-        Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        plugin.getLogger().info("Mise à jour téléchargée automatiquement : commit " + shortSha(commit) + ".");
-        plugin.getLogger().info("Paper installera NoxoClaim.jar depuis plugins/update au prochain redémarrage.");
+        try {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } catch (Exception atomicFailure) {
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+        }
+        plugin.getLogger().info("Mise à jour automatique téléchargée : commit " + shortSha(commit) + ".");
+        plugin.getLogger().info("Redémarrez le serveur pour que Paper installe la nouvelle version depuis plugins/update.");
     }
 
     private String getBuildCommit() {
         try (InputStream in = plugin.getResource("build-info.properties")) {
             if (in == null) return "unknown";
-            Properties p = new Properties();
-            p.load(in);
+            Properties p = new Properties(); p.load(in);
             return p.getProperty("commit", "unknown").trim();
-        } catch (Exception e) {
-            return "unknown";
-        }
+        } catch (Exception e) { return "unknown"; }
     }
 
     private String request(String url) throws Exception {
@@ -137,20 +132,7 @@ public final class UpdateChecker {
         return response.body();
     }
 
-    private static String match(String regex, String input) {
-        Matcher m = Pattern.compile(regex).matcher(input);
-        return m.find() ? m.group(1) : null;
-    }
-
+    private static String match(String regex, String input) { Matcher m = Pattern.compile(regex).matcher(input); return m.find() ? m.group(1) : null; }
     private static String shortSha(String sha) { return sha == null || sha.length() < 7 ? sha : sha.substring(0, 7); }
-
-    public static int compare(String a, String b) {
-        return normalize(a).compareTo(normalize(b));
-    }
-
-    private static String normalize(String v) {
-        return v == null ? "0.0.0" : v.trim().replaceFirst("^[vV]", "").split("\\s+")[0].toLowerCase(Locale.ROOT);
-    }
-
     private record Release(String version, String downloadUrl, String commit) {}
 }
