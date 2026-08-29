@@ -2,21 +2,28 @@ package fr.noxodev.noxoclaim.hud;
 
 import fr.noxodev.noxoclaim.NoxoClaim;
 import fr.noxodev.noxoclaim.models.Claim;
-import io.github.nacvark.hudengine.api.HudEngine;
-import io.github.nacvark.hudengine.api.HudEngineProvider;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 
-/** Optional HUDEngine bridge with an automatically managed NoxoClaim minimap HUD. */
+/**
+ * Optional HUDEngine bridge.
+ *
+ * IMPORTANT: this class deliberately does not import HUDEngine classes. The API is
+ * resolved through reflection so NoxoClaim remains fully functional when HUDEngine
+ * is not installed.
+ */
 public final class HudEngineIntegration {
     public static final String HUD_KEY = "noxoclaim:minimap";
+    private static final String PROVIDER = "io.github.nacvark.hudengine.api.HudEngineProvider";
+
     private final NoxoClaim plugin;
-    private HudEngine engine;
+    private Object engine;
     private boolean ready;
 
     public HudEngineIntegration(NoxoClaim plugin) {
@@ -28,37 +35,60 @@ public final class HudEngineIntegration {
             plugin.getLogger().info("HUDEngine : intégration désactivée dans la configuration.");
             return;
         }
-        Bukkit.getScheduler().runTaskLater(plugin, this::resolve, 20L);
+        Bukkit.getScheduler().runTaskLater(plugin, this::resolveSafely, 20L);
     }
 
-    private void resolve() {
-        Optional<HudEngine> found = HudEngineProvider.find();
-        if (found.isEmpty()) {
-            plugin.getLogger().info("HUDEngine : non disponible. NoxoClaim continue sans HUD.");
-            return;
-        }
-        engine = found.get();
-        if (!engine.isRunning()) {
-            plugin.getLogger().warning("HUDEngine est chargé mais son moteur n'est pas opérationnel.");
-            return;
-        }
+    private void resolveSafely() {
+        try {
+            if (Bukkit.getPluginManager().getPlugin("HUDEngine") == null) {
+                plugin.getLogger().info("HUDEngine : non disponible. NoxoClaim continue sans HUD.");
+                return;
+            }
 
-        ensureMinimapConfig();
-        HudEngine.ReloadResult reload = engine.reload();
-        if (!reload.success()) {
-            plugin.getLogger().warning("HUDEngine : impossible de compiler la minimap NoxoClaim.");
-            reload.messages().forEach(message -> plugin.getLogger().warning("HUDEngine: " + message));
-            return;
-        }
+            Class<?> providerClass = Class.forName(PROVIDER, false,
+                    Bukkit.getPluginManager().getPlugin("HUDEngine").getClass().getClassLoader());
+            Method find = providerClass.getMethod("find");
+            Object result = find.invoke(null);
+            if (!(result instanceof Optional<?> optional) || optional.isEmpty()) {
+                plugin.getLogger().warning("HUDEngine : fournisseur API introuvable.");
+                return;
+            }
 
-        engine.values().register("noxoclaim:map", this::renderMap);
-        engine.values().register("noxoclaim:chunk", p -> {
-            Claim claim = plugin.claims().at(p.getLocation());
-            return claim == null ? "Libre" : claim.getName();
-        });
-        ready = true;
-        plugin.getLogger().info("HUDEngine : intégration NoxoClaim activée, minimap 9x9 prête.");
-        for (Player player : Bukkit.getOnlinePlayers()) show(player);
+            engine = optional.get();
+            Method running = engine.getClass().getMethod("isRunning");
+            if (!(Boolean) running.invoke(engine)) {
+                plugin.getLogger().warning("HUDEngine est chargé mais son moteur n'est pas opérationnel.");
+                engine = null;
+                return;
+            }
+
+            ensureMinimapConfig();
+            tryInvoke(engine, "reload");
+            registerValues();
+            ready = true;
+            plugin.getLogger().info("HUDEngine : intégration NoxoClaim activée.");
+            for (Player player : Bukkit.getOnlinePlayers()) show(player);
+        } catch (ClassNotFoundException e) {
+            plugin.getLogger().info("HUDEngine : API absente, intégration désactivée.");
+        } catch (Throwable e) {
+            ready = false;
+            engine = null;
+            plugin.getLogger().warning("HUDEngine : intégration désactivée après erreur : " + rootMessage(e));
+        }
+    }
+
+    private void registerValues() {
+        try {
+            Object values = engine.getClass().getMethod("values").invoke(engine);
+            Method register = values.getClass().getMethod("register", String.class, java.util.function.Function.class);
+            register.invoke(values, "noxoclaim:map", (java.util.function.Function<Player, String>) this::renderMap);
+            register.invoke(values, "noxoclaim:chunk", (java.util.function.Function<Player, String>) player -> {
+                Claim claim = plugin.claims().at(player.getLocation());
+                return claim == null ? "Libre" : claim.getName();
+            });
+        } catch (Throwable e) {
+            plugin.getLogger().warning("HUDEngine : enregistrement des valeurs impossible : " + rootMessage(e));
+        }
     }
 
     private void ensureMinimapConfig() {
@@ -103,23 +133,35 @@ public final class HudEngineIntegration {
         if (!Files.exists(file)) Files.writeString(file, content);
     }
 
-    public boolean isReady() { return ready && engine != null && engine.isRunning(); }
+    public boolean isReady() {
+        return ready && engine != null;
+    }
 
     public void show(Player player) {
-        if (!isReady() || !engine.hasHud(HUD_KEY)) return;
-        engine.player(player).show(HUD_KEY);
-        engine.player(player).refresh();
+        invokePlayerAction(player, "show");
     }
 
     public void hide(Player player) {
-        if (!isReady()) return;
-        engine.player(player).hide(HUD_KEY);
-        engine.player(player).refresh();
+        invokePlayerAction(player, "hide");
     }
 
     public void refresh(Player player) {
+        invokePlayerAction(player, "refresh");
+    }
+
+    private void invokePlayerAction(Player player, String action) {
         if (!isReady()) return;
-        engine.player(player).refresh();
+        try {
+            Object controller = engine.getClass().getMethod("player", Player.class).invoke(engine, player);
+            if ("refresh".equals(action)) {
+                tryInvoke(controller, "refresh");
+            } else {
+                controller.getClass().getMethod(action, String.class).invoke(controller, HUD_KEY);
+                tryInvoke(controller, "refresh");
+            }
+        } catch (Throwable e) {
+            plugin.getLogger().fine("HUDEngine " + action + " impossible : " + rootMessage(e));
+        }
     }
 
     private String renderMap(Player player) {
@@ -141,5 +183,18 @@ public final class HudEngineIntegration {
             }
         }
         return map.toString();
+    }
+
+    private static void tryInvoke(Object target, String method) {
+        try {
+            target.getClass().getMethod(method).invoke(target);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) current = current.getCause();
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 }
