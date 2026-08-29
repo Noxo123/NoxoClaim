@@ -8,6 +8,7 @@ website: https://github.com/Noxo123/NoxoClaim
 softdepend:
   - Vault
   - LuckPerms
+  - HUDEngine
 commands:
   claim:
     description: Gère les claims, la carte et les protections NoxoClaim
@@ -27,7 +28,7 @@ commands:
     usage: /chome <nom|list>
   claimadmin:
     description: Administration NoxoClaim
-    usage: /claimadmin <list|delete|deleteall|save|reload|update|info|debug>
+    usage: /claimadmin <list|delete|deleteall|save|reload|update|info|debug|hud>
     permission: noxoclaim.admin
 permissions:
   noxoclaim.admin:
