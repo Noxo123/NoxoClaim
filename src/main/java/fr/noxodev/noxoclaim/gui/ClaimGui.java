@@ -9,6 +9,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
@@ -148,7 +149,6 @@ public final class ClaimGui {
         renderMap(p,i);
     }
 
-    /** Re-renders the existing map inventory instead of opening a new inventory. */
     private void renderMap(Player p, Inventory i) {
         int pcx=p.getChunk().getX(), pcz=p.getChunk().getZ();
         fill(i,Material.BLACK_STAINED_GLASS_PANE);
@@ -170,18 +170,26 @@ public final class ClaimGui {
     }
 
     private final class InventoryListener implements Listener {
-        @EventHandler public void click(InventoryClickEvent e) {
-            if(!(e.getWhoClicked() instanceof Player p)) return;
-            if(!(e.getView().getTopInventory().getHolder() instanceof MenuHolder holder)) return;
+        @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
+        public void click(InventoryClickEvent e) {
+            if (!(e.getWhoClicked() instanceof Player p)) return;
+            Inventory top = e.getView().getTopInventory();
+            if (!(top.getHolder() instanceof MenuHolder holder)) return;
+            if (e.getClickedInventory() != top) return;
+            int slot = e.getSlot();
+            if (slot < 0 || slot >= top.getSize()) return;
             e.setCancelled(true);
-            if(e.getRawSlot()<0 || e.getRawSlot()>=e.getView().getTopInventory().getSize()) return;
-            String type=holder.type(); int s=e.getRawSlot();
-            if(type.equals(MAIN)){handleMain(p,s);return;} if(type.equals(CLAIMS)){handleClaims(p,s);return;} if(type.equals(FLAGS)){handleFlags(p,s);return;} if(type.equals(HELP)){if(s==40)openMain(p);else if(s==53)p.closeInventory();return;} if(type.equals(MAP))handleMap(p,s);
+            String type=holder.type();
+            if(type.equals(MAIN)){handleMain(p,slot);return;}
+            if(type.equals(CLAIMS)){handleClaims(p,slot);return;}
+            if(type.equals(FLAGS)){handleFlags(p,slot);return;}
+            if(type.equals(HELP)){if(slot==40)openMain(p);else if(slot==53)p.closeInventory();return;}
+            if(type.equals(MAP))handleMap(p,slot);
         }
 
         private void handleMain(Player p,int s){
             if(s==10) openClaims(p);
-            else if(s==13){Claim c=plugin.claims().atChunk(p.getWorld().getName(),p.getChunk().getX(),p.getChunk().getZ());if(c==null){if(command!=null)command.claimCurrentChunk(p);}else if(c.getOwner().equals(p.getUniqueId()))openFlags(p,c);else p.sendMessage("§c§lNoxoClaim §8» §fCe chunk appartient à §e"+owner(c)+"§f.");}
+            else if(s==13){Claim c=plugin.claims().atChunk(p.getWorld().getName(),p.getChunk().getX(),p.getChunk().getZ());if(c==null){if(command!=null)command.claimCurrentChunk(p);else p.sendMessage("§cNoxoClaim : action indisponible.");}else if(c.getOwner().equals(p.getUniqueId()))openFlags(p,c);else p.sendMessage("§c§lNoxoClaim §8» §fCe chunk appartient à §e"+owner(c)+"§f.");}
             else if(s==16){Claim c=plugin.claims().at(p.getLocation());if(c!=null&&c.getOwner().equals(p.getUniqueId()))openFlags(p,c);else p.sendMessage("§e§lNoxoClaim §8» §fTu n'es pas dans ton claim.");}
             else if(s==22)openMap(p); else if(s==31)p.performCommand("claim info"); else if(s==33)openHelp(p); else if(s==40)p.closeInventory();
         }
@@ -204,11 +212,15 @@ public final class ClaimGui {
             if(s==50){refreshMap(p);return;}
             if(s>=45)return;
             int row=s/9,col=s%9;
-            if(row>4)return;
             int cx=p.getChunk().getX()+col-4,cz=p.getChunk().getZ()+row-2;
             Claim c=plugin.claims().atChunk(p.getWorld().getName(),cx,cz);
             if(c==null){
-                if(command!=null&&command.claimChunk(p,p.getWorld(),cx,cz)) refreshMap(p);
+                if(command==null){p.sendMessage("§c§lNoxoClaim §8» §fLe système de claim n'est pas disponible.");return;}
+                boolean claimed=command.claimChunk(p,p.getWorld(),cx,cz);
+                if(claimed){
+                    p.sendMessage("§a§l✓ Claim créé depuis la carte ! §7Chunk §f"+cx+" / "+cz);
+                    refreshMap(p);
+                }
             } else if(c.getOwner().equals(p.getUniqueId())) {
                 openFlags(p,c);
             } else {
@@ -217,7 +229,8 @@ public final class ClaimGui {
             }
         }
 
-        @EventHandler public void close(InventoryCloseEvent e){
+        @EventHandler
+        public void close(InventoryCloseEvent e){
             if(e.getPlayer() instanceof Player p&&e.getView().getTopInventory().getHolder() instanceof MenuHolder h&&MAP.equals(h.type())) mapViewers.remove(p.getUniqueId());
         }
     }
