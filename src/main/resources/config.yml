@@ -10,7 +10,6 @@ claim:
     fire: false
     mob-griefing: false
     entry: true
-
   protection:
     blocks: true
     containers: true
@@ -20,12 +19,11 @@ claim:
     entities: true
     projectiles: true
     pistons: true
-
   limits:
     allow-adjacent: true
     allow-overlap: false
 
- economy:
+economy:
   enabled: true
   cost-per-chunk: 500.0
 
