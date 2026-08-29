@@ -1,8 +1,6 @@
 package fr.noxodev.noxoclaim.commands;
 
 import fr.noxodev.noxoclaim.NoxoClaim;
-import fr.noxodev.noxoclaim.update.UpdateChecker;
-import fr.noxodev.noxoclaim.update.UpdateInfo;
 import org.bukkit.command.*;
 import java.util.*;
 
@@ -28,10 +26,11 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
             case "save" -> { plugin.claims().save(); sender.sendMessage("§aClaims sauvegardés."); }
             case "reload" -> { plugin.reloadConfig(); sender.sendMessage("§aConfiguration rechargée."); }
             case "update", "updates" -> {
-                UpdateInfo info = plugin.updateInfo();
-                if (info == null) { sender.sendMessage("§7Vérification des mises à jour en cours..."); new UpdateChecker(plugin).check(false); return true; }
-                if (!info.available()) sender.sendMessage("§aNoxoClaim est à jour (§f" + info.currentVersion() + "§a).");
-                else { sender.sendMessage("§eNouvelle version : §a" + info.latestVersion() + " §7(actuelle " + info.currentVersion() + ")"); if (info.releaseUrl() != null) sender.sendMessage("§7Release : §f" + info.releaseUrl()); }
+                if (plugin.updateChecker() == null) {
+                    sender.sendMessage("§c[NoxoClaim] Le système de mise à jour n'est pas disponible.");
+                    return true;
+                }
+                plugin.updateChecker().checkManual(sender);
             }
             default -> help(sender);
         }
