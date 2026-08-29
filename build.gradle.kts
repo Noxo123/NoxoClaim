@@ -15,13 +15,14 @@ repositories {
 
 val paperApiVersion = providers.gradleProperty("paperApiVersion").orElse("26.2.build.+")
 val paperApi = "io.papermc.paper:paper-api:${paperApiVersion.get()}"
+val gitCommit = providers.environmentVariable("GITHUB_SHA")
+    .orElse(providers.gradleProperty("noxoclaimCommit"))
+    .orElse("unknown")
 
 dependencies {
     compileOnly(paperApi)
     testImplementation(paperApi)
 
-    // VaultAPI must be present in the final plugin JAR because NoxoClaim
-    // references Economy directly. The actual Vault plugin remains optional.
     implementation("com.github.MilkBowl:VaultAPI:1.7") {
         exclude(group = "org.bukkit", module = "bukkit")
     }
@@ -39,10 +40,15 @@ tasks.withType<JavaCompile>().configureEach {
     options.release.set(25)
 }
 
+tasks.processResources {
+    filesMatching("build-info.properties") {
+        expand("gitCommit" to gitCommit.get())
+    }
+}
+
 tasks.test { useJUnitPlatform() }
 
 tasks.jar { enabled = false }
-
 tasks.shadowJar {
     archiveFileName.set("NoxoClaim-${project.version}.jar")
     mergeServiceFiles()
