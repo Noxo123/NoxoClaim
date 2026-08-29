@@ -26,7 +26,7 @@ effects:
     duration-ticks: 100
     interval-ticks: 10
     step: 1.0
-    radius-view-distance: 16
+    radius-view-distance: 64
   welcome-title:
     enabled: true
     title: "§b§lBienvenue !"
@@ -36,8 +36,8 @@ effects:
     fade-out: 15
 
 map:
-  visual-radius: 16
-  visual-duration-ticks: 100
+  visual-radius: 32
+  visual-duration-ticks: 120
   particles:
     type: END_ROD
 
