@@ -3,25 +3,34 @@ package fr.noxodev.noxoclaim.update;
 import fr.noxodev.noxoclaim.NoxoClaim;
 import org.bukkit.Bukkit;
 
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** Reliable asynchronous GitHub update checker. */
+/**
+ * Commit-based updater. It detects the current main commit, verifies the
+ * matching nightly release asset, and places the new jar in Paper's update
+ * directory. The running jar is never replaced in-place.
+ */
 public final class UpdateChecker {
-    private static final String RELEASES_API = "https://api.github.com/repos/Noxo123/NoxoClaim/releases?per_page=20";
-    private static final String TAGS_API = "https://api.github.com/repos/Noxo123/NoxoClaim/tags?per_page=50";
-    private static final Pattern OBJECT = Pattern.compile("\\{(?:[^{}]|\\{[^{}]*\\})*\\}");
-    private static final Pattern TAG = Pattern.compile("\"tag_name\"\\s*:\\s*\"([^\"]+)\"");
-    private static final Pattern NAME = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]*)\"");
-    private static final Pattern URL = Pattern.compile("\"html_url\"\\s*:\\s*\"([^\"]+)\"");
-    private static final Pattern BODY = Pattern.compile("\"body\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"");
-    private static final Pattern PRERELEASE = Pattern.compile("\"prerelease\"\\s*:\\s*(true|false)");
+    private static final String API = "https://api.github.com/repos/Noxo123/NoxoClaim";
+    private static final String COMMIT_API = API + "/commits/main";
+    private static final String RELEASE_API = API + "/releases/tags/nightly";
+    private static final String RELEASE_PAGE = "https://github.com/Noxo123/NoxoClaim/releases/tag/nightly";
+    private static final Pattern SHA = Pattern.compile("\"sha\"\\s*:\\s*\"([0-9a-fA-F]{40})\"");
+    private static final Pattern ASSET = Pattern.compile("\\{[^{}]*?\"name\"\\s*:\\s*\"([^\"]+\\.jar)\"[^{}]*?\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"[^{}]*?\\}");
+
     private final NoxoClaim plugin;
     private final HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     private volatile boolean checking;
@@ -33,76 +42,115 @@ public final class UpdateChecker {
         checking = true;
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
-                Release latest = findLatestRelease();
-                String current = normalize(plugin.getDescription().getVersion());
-                if (latest == null) {
-                    UpdateInfo info = new UpdateInfo(false, current, current, null, "");
-                    plugin.setUpdateInfo(info);
-                    if (notifyConsole) plugin.getLogger().info("Aucune version publiée sur GitHub pour le moment (" + current + ").");
+                String remoteCommit = fetchMainCommit();
+                String localCommit = getBuildCommit();
+
+                if (remoteCommit.equalsIgnoreCase(localCommit)) {
+                    if (notifyConsole) plugin.getLogger().info("NoxoClaim est à jour (commit " + shortSha(remoteCommit) + ").");
                     return;
                 }
-                boolean available = compare(current, latest.version) < 0;
-                UpdateInfo info = new UpdateInfo(available, current, latest.version, latest.url, latest.body);
+
+                Release release = fetchNightlyRelease();
+                if (release == null || release.downloadUrl == null) {
+                    plugin.getLogger().warning("Nouveau commit détecté (" + shortSha(remoteCommit) + "), mais aucun JAR de mise à jour n'est encore disponible. Le build GitHub est probablement en cours.");
+                    return;
+                }
+
+                if (release.commit != null && !remoteCommit.equalsIgnoreCase(release.commit)) {
+                    plugin.getLogger().warning("Le build nightly n'est pas encore au dernier commit. Mise à jour reportée.");
+                    return;
+                }
+
+                UpdateInfo info = new UpdateInfo(true, plugin.getDescription().getVersion(), release.version, RELEASE_PAGE, "Commit " + shortSha(remoteCommit));
                 plugin.setUpdateInfo(info);
-                if (notifyConsole) {
-                    if (available) plugin.getLogger().warning("Nouvelle version disponible : " + latest.version + " (actuelle : " + current + ")" + (latest.url == null ? "" : " | " + latest.url));
-                    else plugin.getLogger().info("NoxoClaim est à jour (" + current + ").");
+
+                if (plugin.getConfig().getBoolean("updates.auto-update", true)) {
+                    downloadUpdate(release.downloadUrl, remoteCommit);
+                } else if (notifyConsole) {
+                    plugin.getLogger().warning("Nouvelle mise à jour disponible : commit " + shortSha(remoteCommit));
                 }
             } catch (Exception e) {
-                if (notifyConsole) plugin.getLogger().warning("Vérification des mises à jour impossible : GitHub inaccessible (" + e.getClass().getSimpleName() + ").");
-            } finally { checking = false; }
+                if (notifyConsole) plugin.getLogger().warning("Vérification des mises à jour impossible : " + e.getMessage());
+            } finally {
+                checking = false;
+            }
         });
     }
 
-    private Release findLatestRelease() throws Exception {
-        String releases = request(RELEASES_API);
-        Release best = null;
-        Matcher objects = OBJECT.matcher(releases);
-        while (objects.find()) {
-            String block = objects.group();
-            Matcher pre = PRERELEASE.matcher(block);
-            if (pre.find() && Boolean.parseBoolean(pre.group(1))) continue;
-            String tag = group(TAG, block);
-            if (tag == null) continue;
-            String version = normalize(tag);
-            if (!isVersion(version)) continue;
-            String url = group(URL, block);
-            String rawBody = group(BODY, block);
-            String body = rawBody == null ? "" : unescape(rawBody);
-            if (best == null || compare(best.version, version) < 0) best = new Release(version, url, body);
-        }
-        if (best != null) return best;
+    private String fetchMainCommit() throws Exception {
+        String json = request(COMMIT_API);
+        Matcher m = SHA.matcher(json);
+        if (!m.find()) throw new IllegalStateException("SHA GitHub introuvable");
+        return m.group(1);
+    }
 
-        // A repository may use tags without publishing GitHub Releases.
-        String tags = request(TAGS_API);
-        objects = OBJECT.matcher(tags);
-        while (objects.find()) {
-            String block = objects.group();
-            String tag = group(NAME, block);
-            if (tag == null) continue;
-            String version = normalize(tag);
-            if (!isVersion(version)) continue;
-            String url = "https://github.com/Noxo123/NoxoClaim/releases/tag/" + tag;
-            if (best == null || compare(best.version, version) < 0) best = new Release(version, url, "");
+    private Release fetchNightlyRelease() throws Exception {
+        String json = request(RELEASE_API);
+        String tag = match("\"tag_name\"\\s*:\\s*\"([^\"]+)\"", json);
+        String target = match("\"target_commitish\"\\s*:\\s*\"([^\"]+)\"", json);
+        Matcher assets = ASSET.matcher(json);
+        if (!assets.find()) return null;
+        return new Release(tag == null ? "nightly" : tag, assets.group(2), target);
+    }
+
+    private void downloadUpdate(String url, String commit) throws Exception {
+        Path updateDir = plugin.getDataFolder().getParentFile().toPath().resolve("update");
+        Files.createDirectories(updateDir);
+        Path target = updateDir.resolve("NoxoClaim.jar");
+        Path temp = updateDir.resolve("NoxoClaim.jar.download");
+
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(60))
+                .header("User-Agent", "NoxoClaim-Updater/" + plugin.getDescription().getVersion()).GET().build();
+        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        if (response.statusCode() != 200) throw new IllegalStateException("Téléchargement HTTP " + response.statusCode());
+
+        try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) {
+            in.transferTo(out);
         }
-        return best;
+        if (Files.size(temp) < 10_000) {
+            Files.deleteIfExists(temp);
+            throw new IllegalStateException("JAR téléchargé invalide");
+        }
+        Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        plugin.getLogger().info("Mise à jour téléchargée automatiquement : commit " + shortSha(commit) + ".");
+        plugin.getLogger().info("Paper installera NoxoClaim.jar depuis plugins/update au prochain redémarrage.");
+    }
+
+    private String getBuildCommit() {
+        try (InputStream in = plugin.getResource("build-info.properties")) {
+            if (in == null) return "unknown";
+            Properties p = new Properties();
+            p.load(in);
+            return p.getProperty("commit", "unknown").trim();
+        } catch (Exception e) {
+            return "unknown";
+        }
     }
 
     private String request(String url) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(10))
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(15))
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2022-11-28")
-                .header("User-Agent", "NoxoClaim-UpdateChecker/" + plugin.getDescription().getVersion()).GET().build();
+                .header("User-Agent", "NoxoClaim-Updater/" + plugin.getDescription().getVersion()).GET().build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() != 200) throw new IllegalStateException("HTTP " + response.statusCode());
+        if (response.statusCode() != 200) throw new IllegalStateException("GitHub HTTP " + response.statusCode());
         return response.body();
     }
 
-    private static String group(Pattern p, String input) { Matcher m=p.matcher(input); return m.find()?m.group(1):null; }
-    private static String unescape(String s) { return s.replace("\\n","\n").replace("\\r","\r").replace("\\\"","\"").replace("\\\\","\\"); }
-    private static String normalize(String v) { return v == null ? "0.0.0" : v.trim().replaceFirst("^[vV]", "").split("\\s+")[0].toLowerCase(Locale.ROOT); }
-    private static boolean isVersion(String v) { return v.matches("\\d+(?:\\.\\d+){0,3}(?:[-+].*)?"); }
-    public static int compare(String a,String b){String[] aa=normalize(a).split("[-+]",2),bb=normalize(b).split("[-+]",2);String[] an=aa[0].split("\\."),bn=bb[0].split("\\.");for(int i=0;i<Math.max(an.length,bn.length);i++){int x=part(i<an.length?an[i]:"0"),y=part(i<bn.length?bn[i]:"0");if(x!=y)return Integer.compare(x,y);}return 0;}
-    private static int part(String s){try{return Integer.parseInt(s.replaceAll("\\D.*",""));}catch(Exception e){return 0;}}
-    private record Release(String version,String url,String body) {}
+    private static String match(String regex, String input) {
+        Matcher m = Pattern.compile(regex).matcher(input);
+        return m.find() ? m.group(1) : null;
+    }
+
+    private static String shortSha(String sha) { return sha == null || sha.length() < 7 ? sha : sha.substring(0, 7); }
+
+    public static int compare(String a, String b) {
+        return normalize(a).compareTo(normalize(b));
+    }
+
+    private static String normalize(String v) {
+        return v == null ? "0.0.0" : v.trim().replaceFirst("^[vV]", "").split("\\s+")[0].toLowerCase(Locale.ROOT);
+    }
+
+    private record Release(String version, String downloadUrl, String commit) {}
 }
