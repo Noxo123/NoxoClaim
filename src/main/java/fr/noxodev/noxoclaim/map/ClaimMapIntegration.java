@@ -15,51 +15,25 @@ import java.util.UUID;
 
 /**
 
-* Intégration optionnelle avec un client NoxoClaim possédant
-* une interface de carte personnalisée.
+* Intégration optionnelle avec le client NoxoClaim.
 *
 * <p>Les clients Minecraft vanilla ne sont pas affectés.</p>
 *
-* <p>Communication via le canal plugin :</p>
+* <p>Communication via le canal :</p>
 *
-* <pre>
-
-* noxoclaim:map
-* </pre>
+* <p>noxoclaim:map</p>
 
 */
-public final class ClaimMapIntegration
-implements PluginMessageListener {
+public final class ClaimMapIntegration implements PluginMessageListener {
 
 ```
-/* ========================================================= */
-/* CONSTANTES                                                  */
-/* ========================================================= */
-
 public static final String CHANNEL = "noxoclaim:map";
 
 private static final int PROTOCOL_VERSION = 1;
-
-private static final int INITIAL_BUFFER_SIZE = 32_768;
-
-private static final String MESSAGE_HELLO = "HELLO";
-private static final String MESSAGE_SYNC = "SYNC";
-
-/* ========================================================= */
-/* CHAMPS                                                      */
-/* ========================================================= */
+private static final int INITIAL_BUFFER_SIZE = 32768;
 
 private final NoxoClaim plugin;
-
-/**
- * UUID des joueurs ayant confirmé la présence
- * du client NoxoClaim.
- */
 private final Set<UUID> clients = new HashSet<>();
-
-/* ========================================================= */
-/* CONSTRUCTEUR                                                 */
-/* ========================================================= */
 
 public ClaimMapIntegration(NoxoClaim plugin) {
     this.plugin = plugin;
@@ -68,7 +42,7 @@ public ClaimMapIntegration(NoxoClaim plugin) {
 }
 
 /**
- * Enregistre les canaux de communication Bukkit.
+ * Enregistre les canaux Bukkit.
  */
 private void registerChannels() {
     plugin.getServer()
@@ -87,15 +61,8 @@ private void registerChannels() {
             );
 }
 
-/* ========================================================= */
-/* CLIENTS                                                      */
-/* ========================================================= */
-
 /**
- * Vérifie si un joueur utilise le client NoxoClaim.
- *
- * @param player joueur à vérifier
- * @return true si le client a effectué le handshake
+ * Vérifie si le joueur utilise le client NoxoClaim.
  */
 public boolean isMapClient(Player player) {
     return player != null
@@ -103,7 +70,7 @@ public boolean isMapClient(Player player) {
 }
 
 /**
- * Retire un joueur de la liste des clients connus.
+ * Oublie un joueur.
  */
 public void forget(Player player) {
     if (player == null) {
@@ -113,15 +80,8 @@ public void forget(Player player) {
     clients.remove(player.getUniqueId());
 }
 
-/* ========================================================= */
-/* HANDSHAKE                                                    */
-/* ========================================================= */
-
 /**
- * Effectue le handshake avec le client NoxoClaim.
- *
- * <p>Le serveur annonce sa version de protocole
- * puis envoie immédiatement la carte complète.</p>
+ * Effectue le handshake avec le client.
  */
 public void handshake(Player player) {
     if (player == null || !player.isOnline()) {
@@ -139,11 +99,10 @@ public void handshake(Player player) {
 }
 
 /**
- * Construit le message d'initialisation.
+ * Construit le message HELLO.
  */
 private String buildHelloMessage() {
-    String version =
-            plugin.getDescription().getVersion();
+    String version = plugin.getDescription().getVersion();
 
     return "{"
             + "\"type\":\"hello\","
@@ -157,12 +116,8 @@ private String buildHelloMessage() {
             + "}";
 }
 
-/* ========================================================= */
-/* SYNCHRONISATION                                              */
-/* ========================================================= */
-
 /**
- * Synchronise tous les clients NoxoClaim connectés.
+ * Synchronise tous les clients connectés.
  */
 public void syncAll() {
     for (UUID uuid : List.copyOf(clients)) {
@@ -179,26 +134,23 @@ public void syncAll() {
 }
 
 /**
- * Envoie un snapshot complet des claims à un joueur.
+ * Envoie la totalité des claims à un joueur.
  */
 public void sync(Player player) {
     if (!isMapClient(player)) {
         return;
     }
 
-    String message = buildSnapshot(player);
-
     send(
             player,
-            message
+            buildSnapshot(player)
     );
 }
 
 /**
- * Construit le snapshot JSON complet.
+ * Construit le snapshot complet des claims.
  */
 private String buildSnapshot(Player player) {
-
     StringBuilder json =
             new StringBuilder(INITIAL_BUFFER_SIZE);
 
@@ -232,7 +184,7 @@ private String buildSnapshot(Player player) {
 }
 
 /**
- * Ajoute un claim au JSON du snapshot.
+ * Ajoute un claim au JSON.
  */
 private void appendClaim(
         StringBuilder json,
@@ -263,12 +215,21 @@ private void appendClaim(
             ownerUuid.equals(player.getUniqueId());
 
     json.append("{")
+
             .append("\"id\":\"")
-            .append(escapeJson(String.valueOf(claim.getId())))
+            .append(
+                    escapeJson(
+                            String.valueOf(claim.getId())
+                    )
+            )
             .append("\",")
 
             .append("\"world\":\"")
-            .append(escapeJson(claim.getWorld()))
+            .append(
+                    escapeJson(
+                            claim.getWorld()
+                    )
+            )
             .append("\",")
 
             .append("\"owner\":\"")
@@ -276,11 +237,17 @@ private void appendClaim(
             .append("\",")
 
             .append("\"ownerName\":\"")
-            .append(escapeJson(ownerName))
+            .append(
+                    escapeJson(ownerName)
+            )
             .append("\",")
 
             .append("\"name\":\"")
-            .append(escapeJson(claim.getName()))
+            .append(
+                    escapeJson(
+                            claim.getName()
+                    )
+            )
             .append("\",")
 
             .append("\"minChunkX\":")
@@ -305,15 +272,11 @@ private void appendClaim(
             .append("}");
 }
 
-/* ========================================================= */
-/* CLAIM EVENTS                                                 */
-/* ========================================================= */
-
 /**
- * Informe les clients qu'un claim a été modifié.
+ * Informe les clients qu'un claim a changé.
  *
- * @param claim claim concerné
- * @param action action effectuée : create, update, delete...
+ * @param claim claim modifié
+ * @param action action effectuée
  */
 public void claimChanged(
         Claim claim,
@@ -323,10 +286,11 @@ public void claimChanged(
         return;
     }
 
-    String message = buildClaimChangedMessage(
-            claim,
-            action
-    );
+    String message =
+            buildClaimChangedMessage(
+                    claim,
+                    action
+            );
 
     for (UUID uuid : List.copyOf(clients)) {
 
@@ -343,13 +307,6 @@ public void claimChanged(
         );
     }
 
-    /*
-     * On envoie ensuite un snapshot complet.
-     *
-     * Le délai d'un tick permet de laisser le système
-     * de claims terminer sa propre modification avant
-     * de récupérer les nouvelles données.
-     */
     Bukkit.getScheduler().runTaskLater(
             plugin,
             this::syncAll,
@@ -358,7 +315,7 @@ public void claimChanged(
 }
 
 /**
- * Construit l'événement de modification d'un claim.
+ * Construit le message de modification d'un claim.
  */
 private String buildClaimChangedMessage(
         Claim claim,
@@ -369,15 +326,16 @@ private String buildClaimChangedMessage(
             + escapeJson(action)
             + "\","
             + "\"id\":\""
-            + escapeJson(String.valueOf(claim.getId()))
+            + escapeJson(
+                    String.valueOf(claim.getId())
+            )
             + "\""
             + "}";
 }
 
-/* ========================================================= */
-/* RÉCEPTION                                                    */
-/* ========================================================= */
-
+/**
+ * Réception des messages du client.
+ */
 @Override
 public void onPluginMessageReceived(
         String channel,
@@ -403,7 +361,7 @@ public void onPluginMessageReceived(
 }
 
 /**
- * Traite les messages reçus du client.
+ * Traite un message reçu.
  */
 private void handleMessage(
         Player player,
@@ -424,26 +382,22 @@ private void handleMessage(
 }
 
 /**
- * Vérifie si le message correspond à un handshake.
+ * Vérifie un message HELLO.
  */
 private boolean isHelloMessage(String message) {
-    return message.startsWith(MESSAGE_HELLO)
+    return message.startsWith("HELLO")
             || message.contains("\"type\":\"hello\"");
 }
 
 /**
- * Vérifie si le message demande une synchronisation.
+ * Vérifie un message SYNC.
  */
 private boolean isSyncMessage(String message) {
-    return message.startsWith(MESSAGE_SYNC);
+    return message.startsWith("SYNC");
 }
 
-/* ========================================================= */
-/* ENVOI                                                        */
-/* ========================================================= */
-
 /**
- * Envoie un message au client NoxoClaim.
+ * Envoie un message au client.
  */
 private void send(
         Player player,
@@ -458,17 +412,14 @@ private void send(
     player.sendPluginMessage(
             plugin,
             CHANNEL,
-            message.getBytes(StandardCharsets.UTF_8)
+            message.getBytes(
+                    StandardCharsets.UTF_8
+            )
     );
 }
 
-/* ========================================================= */
-/* JSON                                                         */
-/* ========================================================= */
-
 /**
- * Échappe une chaîne afin de pouvoir l'insérer
- * correctement dans un document JSON.
+ * Échappe une chaîne pour JSON.
  */
 private static String escapeJson(String value) {
     if (value == null) {
