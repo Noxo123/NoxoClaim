@@ -12,13 +12,7 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.function.Function;
 
-/**
- * Optional HUDEngine bridge.
- *
- * HUDEngine is deliberately accessed through its public API only. In particular,
- * we never invoke methods through the concrete paper implementation class because
- * that implementation may be package-private even when its API methods are public.
- */
+/** Optional HUDEngine bridge. */
 public final class HudEngineIntegration {
     public static final String HUD_KEY = "noxoclaim:minimap";
     private static final String PROVIDER = "io.github.nacvark.hudengine.api.HudEngineProvider";
@@ -49,6 +43,9 @@ public final class HudEngineIntegration {
                 return;
             }
 
+            // Important: do not call methods on HUDEngineImpl directly. Its concrete
+            // implementation can be package-private. Resolve the provider through
+            // the public API and keep every invocation on a public API Method.
             Class<?> providerClass = Class.forName(PROVIDER, false, hudPlugin.getClass().getClassLoader());
             Method find = providerClass.getMethod("find");
             Object result = find.invoke(null);
@@ -58,19 +55,20 @@ public final class HudEngineIntegration {
             }
 
             engine = optional.get();
-            Object running = invokePublicApi(engine, "isRunning");
-            if (!(running instanceof Boolean) || !((Boolean) running)) {
-                plugin.getLogger().warning("HUDEngine est chargé mais son moteur n'est pas opérationnel.");
+            ensureMinimapConfig();
+            invokePublicApiQuietly(engine, "reload");
+            registerValues();
+
+            if (!hasPublicApiMethod(engine, "values")) {
+                plugin.getLogger().warning("HUDEngine : API values() indisponible.");
                 engine = null;
                 return;
             }
 
-            ensureMinimapConfig();
-            invokePublicApiQuietly(engine, "reload");
-            registerValues();
             ready = true;
             plugin.getLogger().info("HUDEngine : intégration NoxoClaim activée.");
             for (Player player : Bukkit.getOnlinePlayers()) show(player);
+            startRefreshTask();
         } catch (ClassNotFoundException e) {
             plugin.getLogger().info("HUDEngine : API absente, intégration désactivée.");
         } catch (Throwable e) {
@@ -80,13 +78,20 @@ public final class HudEngineIntegration {
         }
     }
 
+    private void startRefreshTask() {
+        long ticks = Math.max(2L, plugin.getConfig().getLong("hudengine.refresh-ticks", 5L));
+        Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+            if (!isReady()) return;
+            for (Player player : Bukkit.getOnlinePlayers()) refresh(player);
+        }, ticks, ticks);
+    }
+
     private void registerValues() {
         try {
             Object values = invokePublicApi(engine, "values");
             Method register = findPublicApiMethod(values, "register", String.class, Function.class);
-            if (register == null) {
-                throw new NoSuchMethodException("values.register(String, Function)");
-            }
+            if (register == null) throw new NoSuchMethodException("values.register(String, Function)");
+
             register.invoke(values, "noxoclaim:map", (Function<Player, String>) this::renderMap);
             register.invoke(values, "noxoclaim:chunk", (Function<Player, String>) player -> {
                 Claim claim = plugin.claims().at(player.getLocation());
@@ -106,6 +111,7 @@ public final class HudEngineIntegration {
             Path layouts = data.resolve("layouts");
             Files.createDirectories(huds);
             Files.createDirectories(layouts);
+
             writeIfMissing(huds.resolve("noxoclaim-minimap.yml"), """
                     noxoclaim:minimap:
                       layouts:
@@ -114,6 +120,7 @@ public final class HudEngineIntegration {
                           x: 86
                           y: 4
                     """);
+
             writeIfMissing(layouts.resolve("noxoclaim-minimap.yml"), """
                     noxoclaim-minimap:
                       x: 0
@@ -155,10 +162,16 @@ public final class HudEngineIntegration {
         invokePlayerAction(player, "refresh");
     }
 
-    private void invokePlayerAction(Player player, String action) {
+    public void refreshAll() {
         if (!isReady()) return;
+        for (Player player : Bukkit.getOnlinePlayers()) refresh(player);
+    }
+
+    private void invokePlayerAction(Player player, String action) {
+        if (!isReady() || player == null || !player.isOnline()) return;
         try {
             Object controller = invokePublicApi(engine, "player", Player.class, player);
+            if (controller == null) return;
             if ("refresh".equals(action)) {
                 invokePublicApi(controller, "refresh");
             } else {
@@ -170,14 +183,16 @@ public final class HudEngineIntegration {
         }
     }
 
+    /** 11x11 chunk minimap, centered on the player. */
     private String renderMap(Player player) {
         int centerX = player.getLocation().getBlockX() >> 4;
         int centerZ = player.getLocation().getBlockZ() >> 4;
-        StringBuilder map = new StringBuilder();
-        for (int dz = -4; dz <= 4; dz++) {
-            if (dz != -4) map.append('\n');
-            for (int dx = -4; dx <= 4; dx++) {
-                if (dx != -4) map.append(' ');
+        StringBuilder map = new StringBuilder(11 * 3 * 11);
+
+        for (int dz = -5; dz <= 5; dz++) {
+            if (dz != -5) map.append('\n');
+            for (int dx = -5; dx <= 5; dx++) {
+                if (dx != -5) map.append(' ');
                 if (dx == 0 && dz == 0) {
                     map.append('●');
                     continue;
@@ -191,24 +206,18 @@ public final class HudEngineIntegration {
         return map.toString();
     }
 
-    /**
-     * Finds a method on a public API interface instead of calling getMethod() on
-     * HUDEngine's concrete implementation class. This avoids IllegalAccessException
-     * when the implementation itself is package-private.
-     */
+    private static boolean hasPublicApiMethod(Object target, String name, Class<?>... parameterTypes) {
+        return findPublicApiMethod(target, name, parameterTypes) != null;
+    }
+
+    /** Find methods declared by public API interfaces, never by a package-private implementation. */
     private static Method findPublicApiMethod(Object target, String name, Class<?>... parameterTypes) {
         if (target == null) return null;
-        Class<?> type = target.getClass();
-        Method method = findInInterfaces(type, name, parameterTypes);
+        Method method = findInInterfaces(target.getClass(), name, parameterTypes);
         if (method != null) return method;
 
-        Class<?> superclass = type.getSuperclass();
+        Class<?> superclass = target.getClass().getSuperclass();
         while (superclass != null) {
-            try {
-                method = superclass.getMethod(name, parameterTypes);
-                if (java.lang.reflect.Modifier.isPublic(superclass.getModifiers())) return method;
-            } catch (NoSuchMethodException ignored) {
-            }
             method = findInInterfaces(superclass, name, parameterTypes);
             if (method != null) return method;
             superclass = superclass.getSuperclass();
