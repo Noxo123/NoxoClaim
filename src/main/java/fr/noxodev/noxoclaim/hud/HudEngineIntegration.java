@@ -5,6 +5,12 @@ import fr.noxodev.noxoclaim.models.Claim;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
+import javax.imageio.ImageIO;
+import java.awt.BasicStroke;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -12,10 +18,13 @@ import java.nio.file.Path;
 import java.util.Optional;
 import java.util.function.Function;
 
-/** Optional HUDEngine bridge. */
+/** Optional HUDEngine bridge and graphical NoxoClaim mini-map. */
 public final class HudEngineIntegration {
     public static final String HUD_KEY = "noxoclaim:minimap";
     private static final String PROVIDER = "io.github.nacvark.hudengine.api.HudEngineProvider";
+    private static final int MAP_SIZE = 11;
+    private static final int CELL_SIZE = 12;
+    private static final int MAP_PIXELS = MAP_SIZE * CELL_SIZE;
 
     private final NoxoClaim plugin;
     private Object engine;
@@ -43,9 +52,6 @@ public final class HudEngineIntegration {
                 return;
             }
 
-            // Important: do not call methods on HUDEngineImpl directly. Its concrete
-            // implementation can be package-private. Resolve the provider through
-            // the public API and keep every invocation on a public API Method.
             Class<?> providerClass = Class.forName(PROVIDER, false, hudPlugin.getClass().getClassLoader());
             Method find = providerClass.getMethod("find");
             Object result = find.invoke(null);
@@ -55,7 +61,7 @@ public final class HudEngineIntegration {
             }
 
             engine = optional.get();
-            ensureMinimapConfig();
+            ensureMinimapAssets(hudPlugin.getDataFolder().toPath());
             invokePublicApiQuietly(engine, "reload");
             registerValues();
 
@@ -66,7 +72,7 @@ public final class HudEngineIntegration {
             }
 
             ready = true;
-            plugin.getLogger().info("HUDEngine : intégration NoxoClaim activée.");
+            plugin.getLogger().info("HUDEngine : mini-map graphique NoxoClaim prête (" + MAP_SIZE + "x" + MAP_SIZE + ").");
             for (Player player : Bukkit.getOnlinePlayers()) show(player);
             startRefreshTask();
         } catch (ClassNotFoundException e) {
@@ -92,7 +98,17 @@ public final class HudEngineIntegration {
             Method register = findPublicApiMethod(values, "register", String.class, Function.class);
             if (register == null) throw new NoSuchMethodException("values.register(String, Function)");
 
-            register.invoke(values, "noxoclaim:map", (Function<Player, String>) this::renderMap);
+            // One small numeric value per cell. The image definitions use the value as a
+            // 3-frame listener: 0=free, 1=own claim, 2=other claim.
+            for (int screenZ = -5; screenZ <= 5; screenZ++) {
+                for (int screenX = -5; screenX <= 5; screenX++) {
+                    final int sx = screenX;
+                    final int sz = screenZ;
+                    String key = cellKey(sx, sz);
+                    register.invoke(values, key, (Function<Player, String>) player -> cellState(player, sx, sz));
+                }
+            }
+
             register.invoke(values, "noxoclaim:chunk", (Function<Player, String>) player -> {
                 Claim claim = plugin.claims().at(player.getLocation());
                 return claim == null ? "Libre" : claim.getName();
@@ -102,48 +118,145 @@ public final class HudEngineIntegration {
         }
     }
 
-    private void ensureMinimapConfig() {
-        try {
-            var hudPlugin = Bukkit.getPluginManager().getPlugin("HUDEngine");
-            if (hudPlugin == null) return;
-            Path data = hudPlugin.getDataFolder().toPath();
-            Path huds = data.resolve("huds");
-            Path layouts = data.resolve("layouts");
-            Files.createDirectories(huds);
-            Files.createDirectories(layouts);
-
-            writeIfMissing(huds.resolve("noxoclaim-minimap.yml"), """
-                    noxoclaim:minimap:
-                      layouts:
-                        1:
-                          name: noxoclaim-minimap
-                          x: 86
-                          y: 4
-                    """);
-
-            writeIfMissing(layouts.resolve("noxoclaim-minimap.yml"), """
-                    noxoclaim-minimap:
-                      x: 0
-                      y: 0
-                      texts:
-                        1:
-                          name: default
-                          pattern: "[noxoclaim:map]"
-                          x: 0
-                          y: 0
-                          scale: 1
-                          color: white
-                          align: left
-                          outline: 1
-                          layer: 1
-                    """);
-        } catch (Exception e) {
-            plugin.getLogger().warning("HUDEngine : impossible de créer la configuration minimap : " + e.getMessage());
-        }
+    private String cellState(Player player, int screenX, int screenZ) {
+        if (player == null || !player.isOnline()) return "0";
+        int[] relative = rotateRelative(screenX, screenZ, player.getLocation().getYaw());
+        int centerX = player.getLocation().getBlockX() >> 4;
+        int centerZ = player.getLocation().getBlockZ() >> 4;
+        Claim claim = plugin.claims().atChunk(player.getWorld().getName(), centerX + relative[0], centerZ + relative[1]);
+        if (claim == null) return "0";
+        return claim.getOwner().equals(player.getUniqueId()) ? "1" : "2";
     }
 
-    private void writeIfMissing(Path file, String content) throws IOException {
-        if (!Files.exists(file)) Files.writeString(file, content);
+    /** Rotates the world around the player so the direction the player faces stays at the top. */
+    private int[] rotateRelative(int screenX, int screenZ, float yaw) {
+        double radians = Math.toRadians(-yaw);
+        int worldX = (int) Math.round(screenX * Math.cos(radians) - screenZ * Math.sin(radians));
+        int worldZ = (int) Math.round(screenX * Math.sin(radians) + screenZ * Math.cos(radians));
+        return new int[]{worldX, worldZ};
+    }
+
+    /** Creates the graphical HUD config and the actual PNG sprites used by HUDEngine. */
+    private void ensureMinimapAssets(Path hudEngineData) throws IOException {
+        Path images = hudEngineData.resolve("images");
+        Path layouts = hudEngineData.resolve("layouts");
+        Path huds = hudEngineData.resolve("huds");
+        Files.createDirectories(images);
+        Files.createDirectories(layouts);
+        Files.createDirectories(huds);
+
+        writeMapSprite(images.resolve("noxoclaim-cell.png"));
+        writePlayerSprite(images.resolve("noxoclaim-player.png"));
+        writeFrameSprite(images.resolve("noxoclaim-frame.png"));
+        writeImageDefinitions(images.resolve("noxoclaim-minimap.yml"));
+        writeLayout(layouts.resolve("noxoclaim-minimap.yml"));
+        writeHud(huds.resolve("noxoclaim-minimap.yml"));
+    }
+
+    private void writeMapSprite(Path file) throws IOException {
+        // Three 12x12 frames in one horizontal sprite sheet.
+        BufferedImage image = new BufferedImage(CELL_SIZE * 3, CELL_SIZE, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        try {
+            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            Color[] colors = {new Color(35, 35, 35, 205), new Color(45, 190, 80, 235), new Color(220, 65, 65, 235)};
+            for (int frame = 0; frame < 3; frame++) {
+                int x = frame * CELL_SIZE;
+                g.setColor(colors[frame]);
+                g.fillRect(x + 1, 1, CELL_SIZE - 2, CELL_SIZE - 2);
+                g.setColor(new Color(255, 255, 255, 70));
+                g.setStroke(new BasicStroke(1f));
+                g.drawRect(x + 1, 1, CELL_SIZE - 3, CELL_SIZE - 3);
+            }
+        } finally {
+            g.dispose();
+        }
+        ImageIO.write(image, "png", file.toFile());
+    }
+
+    private void writePlayerSprite(Path file) throws IOException {
+        BufferedImage image = new BufferedImage(CELL_SIZE, CELL_SIZE, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        try {
+            g.setColor(new Color(45, 140, 255, 255));
+            g.fillRect(1, 1, CELL_SIZE - 2, CELL_SIZE - 2);
+            g.setColor(Color.WHITE);
+            g.setStroke(new BasicStroke(2f));
+            g.drawLine(6, 2, 6, 10);
+            g.drawLine(2, 6, 10, 6);
+        } finally {
+            g.dispose();
+        }
+        ImageIO.write(image, "png", file.toFile());
+    }
+
+    private void writeFrameSprite(Path file) throws IOException {
+        BufferedImage image = new BufferedImage(MAP_PIXELS + 8, MAP_PIXELS + 8, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = image.createGraphics();
+        try {
+            g.setColor(new Color(0, 0, 0, 165));
+            g.fillRoundRect(0, 0, image.getWidth(), image.getHeight(), 8, 8);
+            g.setColor(new Color(255, 255, 255, 115));
+            g.setStroke(new BasicStroke(2f));
+            g.drawRoundRect(1, 1, image.getWidth() - 3, image.getHeight() - 3, 8, 8);
+        } finally {
+            g.dispose();
+        }
+        ImageIO.write(image, "png", file.toFile());
+    }
+
+    private void writeImageDefinitions(Path file) throws IOException {
+        StringBuilder out = new StringBuilder();
+        out.append("noxoclaim-frame:\n  file: noxoclaim-frame.png\n  setting:\n    scale: 1\n\n");
+        out.append("noxoclaim-player:\n  file: noxoclaim-player.png\n  setting:\n    scale: 1\n\n");
+        for (int z = -5; z <= 5; z++) {
+            for (int x = -5; x <= 5; x++) {
+                String name = imageKey(x, z);
+                out.append(name).append(":\n")
+                        .append("  file: noxoclaim-cell.png\n")
+                        .append("  type: listener\n")
+                        .append("  split: 3\n")
+                        .append("  split-type: left\n")
+                        .append("  setting:\n")
+                        .append("    scale: 1\n")
+                        .append("    listener:\n")
+                        .append("      value: \"").append(cellKey(x, z)).append("\"\n")
+                        .append("      max: \"2\"\n\n");
+            }
+        }
+        Files.writeString(file, out.toString());
+    }
+
+    private void writeLayout(Path file) throws IOException {
+        StringBuilder out = new StringBuilder();
+        out.append("noxoclaim-minimap:\n  x: -140\n  y: -4\n  images:\n");
+        out.append("    1:\n      name: noxoclaim-frame\n      x: 0\n      y: 0\n      layer: 0\n");
+        int id = 10;
+        for (int z = -5; z <= 5; z++) {
+            for (int x = -5; x <= 5; x++) {
+                out.append("    ").append(id++).append(":\n")
+                        .append("      name: ").append(imageKey(x, z)).append("\n")
+                        .append("      x: ").append((x + 5) * CELL_SIZE + 4).append("\n")
+                        .append("      y: ").append((z + 5) * CELL_SIZE + 4).append("\n")
+                        .append("      layer: 1\n");
+            }
+        }
+        out.append("    200:\n      name: noxoclaim-player\n      x: ").append(4 + 5 * CELL_SIZE).append("\n")
+                .append("      y: ").append(4 + 5 * CELL_SIZE).append("\n      layer: 3\n");
+        out.append("  texts:\n    1:\n      name: small\n      pattern: \"[x] [z] [direction_short]\"\n      x: 70\n      y: 140\n      scale: 1\n      color: white\n      align: center\n      outline: 1\n      layer: 4\n");
+        Files.writeString(file, out.toString());
+    }
+
+    private void writeHud(Path file) throws IOException {
+        Files.writeString(file, "noxoclaim:minimap:\n  layouts:\n    1:\n      name: noxoclaim-minimap\n      x: 99\n      y: 5\n");
+    }
+
+    private static String cellKey(int x, int z) {
+        return "noxoclaim:cell_" + (x + 5) + "_" + (z + 5);
+    }
+
+    private static String imageKey(int x, int z) {
+        return "noxoclaim_cell_" + (x + 5) + "_" + (z + 5);
     }
 
     public boolean isReady() {
@@ -183,39 +296,14 @@ public final class HudEngineIntegration {
         }
     }
 
-    /** 11x11 chunk minimap, centered on the player. */
-    private String renderMap(Player player) {
-        int centerX = player.getLocation().getBlockX() >> 4;
-        int centerZ = player.getLocation().getBlockZ() >> 4;
-        StringBuilder map = new StringBuilder(11 * 3 * 11);
-
-        for (int dz = -5; dz <= 5; dz++) {
-            if (dz != -5) map.append('\n');
-            for (int dx = -5; dx <= 5; dx++) {
-                if (dx != -5) map.append(' ');
-                if (dx == 0 && dz == 0) {
-                    map.append('●');
-                    continue;
-                }
-                Claim claim = plugin.claims().atChunk(player.getWorld().getName(), centerX + dx, centerZ + dz);
-                if (claim == null) map.append('·');
-                else if (claim.getOwner().equals(player.getUniqueId())) map.append('■');
-                else map.append('□');
-            }
-        }
-        return map.toString();
-    }
-
     private static boolean hasPublicApiMethod(Object target, String name, Class<?>... parameterTypes) {
         return findPublicApiMethod(target, name, parameterTypes) != null;
     }
 
-    /** Find methods declared by public API interfaces, never by a package-private implementation. */
     private static Method findPublicApiMethod(Object target, String name, Class<?>... parameterTypes) {
         if (target == null) return null;
         Method method = findInInterfaces(target.getClass(), name, parameterTypes);
         if (method != null) return method;
-
         Class<?> superclass = target.getClass().getSuperclass();
         while (superclass != null) {
             method = findInInterfaces(superclass, name, parameterTypes);
