@@ -1,17 +1,17 @@
 {
   "plugin": "NoxoClaim",
   "channel": "commit",
-  "commit": "27cb396822e1c1e2763458213757a037eda408dc",
-  "version": "27cb396",
-  "generatedAt": "2026-08-30T00:54:39Z",
+  "commit": "f2ef07701ceba7727abd10cd06c31f10d04085d8",
+  "version": "f2ef077",
+  "generatedAt": "2026-08-30T00:58:47Z",
   "downloads": {
     "26.2": {
-      "file": "NoxoClaim-Paper-26.2-27cb396822e1c1e2763458213757a037eda408dc.jar",
-      "sha256": "1436ed4689b8696bb27092a69c7f0bc2af6392ffee5b4fd853cb1a9b4e442a6c"
+      "file": "NoxoClaim-Paper-26.2-f2ef07701ceba7727abd10cd06c31f10d04085d8.jar",
+      "sha256": "2011a3bc70697a5111a916d7d149bbcfd889308313ee0b4f2dd93a434a962188"
     },
     "26.1.2": {
-      "file": "NoxoClaim-Paper-26.1.2-27cb396822e1c1e2763458213757a037eda408dc.jar",
-      "sha256": "1436ed4689b8696bb27092a69c7f0bc2af6392ffee5b4fd853cb1a9b4e442a6c"
+      "file": "NoxoClaim-Paper-26.1.2-f2ef07701ceba7727abd10cd06c31f10d04085d8.jar",
+      "sha256": "2011a3bc70697a5111a916d7d149bbcfd889308313ee0b4f2dd93a434a962188"
     }
   }
 }
