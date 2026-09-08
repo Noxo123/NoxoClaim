@@ -29,7 +29,6 @@ commands:
   claimadmin:
     description: Administration NoxoClaim
     usage: /claimadmin <dashboard|list|delete|deleteall|save|reload|update|info|debug|hud>
-    permission: noxoclaim.admin
 permissions:
   noxoclaim.admin:
     description: Accès complet à NoxoClaim
