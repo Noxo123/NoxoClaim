@@ -64,9 +64,7 @@ public final class ClaimProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void interact(PlayerInteractEvent event) {
-        if (event.getClickedBlock() != null && !allowed(event.getPlayer(), event.getClickedBlock().getLocation())) {
-            event.setCancelled(true);
-        }
+        if (event.getClickedBlock() != null && !allowed(event.getPlayer(), event.getClickedBlock().getLocation())) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -82,15 +80,13 @@ public final class ClaimProtectionListener implements Listener {
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void pvp(EntityDamageByEntityEvent event) {
         if (!(event.getEntity() instanceof Player victim)) return;
-        Entity damager = event.getDamager();
-        if (!(damager instanceof Player attacker)) return;
+        if (!(event.getDamager() instanceof Player attacker)) return;
         Claim claim = claimAt(victim.getLocation());
         if (claim != null && !claim.getFlag(ClaimFlag.PVP) && protectedAgainst(claim, attacker)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void explode(EntityExplodeEvent event) {
-        // Evaluate every affected block so an explosion cannot destroy blocks across a claim boundary.
         event.blockList().removeIf(block -> {
             Claim claim = claimAt(block.getLocation());
             return claim != null && !claim.getFlag(ClaimFlag.EXPLOSIONS);
@@ -119,8 +115,7 @@ public final class ClaimProtectionListener implements Listener {
     public void fluidFlow(BlockFromToEvent event) {
         Claim source = claimAt(event.getBlock().getLocation());
         Claim destination = claimAt(event.getToBlock().getLocation());
-        // Never allow fluids to cross into another protected claim.
-        if (destination != null && destination != source && !destination.getFlag(ClaimFlag.EXPLOSIONS)) event.setCancelled(true);
+        if (destination != null && destination != source) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -141,9 +136,7 @@ public final class ClaimProtectionListener implements Listener {
         UUID previousOwner = lastClaimOwners.get(player.getUniqueId());
         if (!lastClaimOwners.containsKey(player.getUniqueId()) || !Objects.equals(previousOwner, currentOwner)) {
             lastClaimOwners.put(player.getUniqueId(), currentOwner);
-            if (current != null && plugin.getConfig().getBoolean("effects.welcome-title.enabled", true)) {
-                ClaimEffects.showWelcome(plugin, player, current);
-            }
+            if (current != null && plugin.getConfig().getBoolean("effects.welcome-title.enabled", true)) ClaimEffects.showWelcome(plugin, player, current);
         }
 
         if (current == null
@@ -153,9 +146,7 @@ public final class ClaimProtectionListener implements Listener {
             boolean firstOnly = plugin.getConfig().getBoolean("claim.auto-claim.first-only", false);
             if (!firstOnly || plugin.claims().owned(player.getUniqueId()).isEmpty()) {
                 var command = plugin.getCommand("claim");
-                if (command != null && command.getExecutor() != null) {
-                    command.getExecutor().onCommand(player, command, "claim", new String[0]);
-                }
+                if (command != null && command.getExecutor() != null) command.getExecutor().onCommand(player, command, "claim", new String[0]);
             }
         }
     }
