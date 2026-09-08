@@ -1,6 +1,7 @@
 package fr.noxodev.noxoclaim;
 
 import fr.noxodev.noxoclaim.commands.*;
+import fr.noxodev.noxoclaim.gui.ClaimAdminGui;
 import fr.noxodev.noxoclaim.gui.ClaimGui;
 import fr.noxodev.noxoclaim.hud.HudEngineInstaller;
 import fr.noxodev.noxoclaim.hud.HudEngineIntegration;
@@ -27,6 +28,7 @@ public final class NoxoClaim extends JavaPlugin {
     private ClaimMapIntegration mapIntegration;
     private UpdateChecker updateChecker;
     private HudEngineIntegration hudEngine;
+    private ClaimAdminGui adminGui;
     private boolean plugManX;
 
     @Override public void onEnable() {
@@ -45,6 +47,9 @@ public final class NoxoClaim extends JavaPlugin {
         hudEngine.start();
         getServer().getPluginManager().registerEvents(new HudEngineListener(this), this);
 
+        adminGui = new ClaimAdminGui(this);
+        getServer().getPluginManager().registerEvents(adminGui, this);
+
         ClaimGui gui = new ClaimGui(this);
         ClaimCommand command = new ClaimCommand(this, gui);
         gui.setCommand(command);
@@ -56,6 +61,7 @@ public final class NoxoClaim extends JavaPlugin {
 
         if (getCommand("claimadmin") != null) {
             ClaimAdminCommand admin = new ClaimAdminCommand(this);
+            admin.setDashboard(adminGui);
             getCommand("claimadmin").setExecutor(admin);
             getCommand("claimadmin").setTabCompleter(admin);
         }
@@ -86,6 +92,7 @@ public final class NoxoClaim extends JavaPlugin {
     public UpdateInfo updateInfo() { return updateInfo; }
     public UpdateChecker updateChecker() { return updateChecker; }
     public HudEngineIntegration hudEngine() { return hudEngine; }
+    public ClaimAdminGui adminGui() { return adminGui; }
     private void register(String name, ClaimCommand executor) { if (getCommand(name) != null) { getCommand(name).setExecutor(executor); getCommand(name).setTabCompleter(executor); } }
     private void setupEconomy() {
         economy = null;

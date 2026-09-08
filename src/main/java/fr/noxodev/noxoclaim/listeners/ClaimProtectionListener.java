@@ -2,13 +2,24 @@ package fr.noxodev.noxoclaim.listeners;
 
 import fr.noxodev.noxoclaim.NoxoClaim;
 import fr.noxodev.noxoclaim.effects.ClaimEffects;
-import fr.noxodev.noxoclaim.models.*;
+import fr.noxodev.noxoclaim.models.Claim;
+import fr.noxodev.noxoclaim.models.ClaimFlag;
 import org.bukkit.Location;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.block.*;
-import org.bukkit.event.entity.*;
+import org.bukkit.event.block.BlockBurnEvent;
+import org.bukkit.event.block.BlockFromToEvent;
+import org.bukkit.event.block.BlockIgniteEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.entity.EntityChangeBlockEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
+import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -18,66 +29,130 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
-/** Central protection and automatic-claim listener. */
+/** Central protection, boundary and automatic-claim listener. */
 public final class ClaimProtectionListener implements Listener {
     private final NoxoClaim plugin;
     private final Map<UUID, UUID> lastClaimOwners = new HashMap<>();
 
-    public ClaimProtectionListener(NoxoClaim plugin){this.plugin=plugin;}
+    public ClaimProtectionListener(NoxoClaim plugin) { this.plugin = plugin; }
 
-    private boolean allowed(Player player, Location location){
-        Claim c=plugin.claims().at(location);
-        return c==null || player.hasPermission("noxoclaim.bypass") || c.isMember(player.getUniqueId());
+    private Claim claimAt(Location location) {
+        return location == null ? null : plugin.claims().at(location);
     }
-    private boolean protectedAgainst(Claim c, Player p){return c!=null&&!p.hasPermission("noxoclaim.bypass")&&!c.isMember(p.getUniqueId());}
 
-    @EventHandler public void breakBlock(BlockBreakEvent e){if(!allowed(e.getPlayer(),e.getBlock().getLocation()))e.setCancelled(true);}
-    @EventHandler public void place(BlockPlaceEvent e){if(!allowed(e.getPlayer(),e.getBlock().getLocation()))e.setCancelled(true);}
-    @EventHandler public void interact(PlayerInteractEvent e){if(e.getClickedBlock()!=null&&!allowed(e.getPlayer(),e.getClickedBlock().getLocation()))e.setCancelled(true);}
-
-    @EventHandler public void pvp(EntityDamageByEntityEvent e){
-        if(e.getEntity() instanceof Player victim&&e.getDamager() instanceof Player attacker){
-            Claim c=plugin.claims().at(victim.getLocation());
-            if(c!=null&&!c.getFlag(ClaimFlag.PVP)&&protectedAgainst(c,attacker))e.setCancelled(true);
-        }
+    private boolean bypass(Player player) {
+        return player.hasPermission("noxoclaim.bypass");
     }
-    @EventHandler public void explode(EntityExplodeEvent e){Claim c=plugin.claims().at(e.getLocation());if(c!=null&&!c.getFlag(ClaimFlag.EXPLOSIONS))e.blockList().removeIf(b->c.contains(b.getLocation()));}
-    @EventHandler public void fire(BlockIgniteEvent e){Claim c=plugin.claims().at(e.getBlock().getLocation());if(c!=null&&!c.getFlag(ClaimFlag.FIRE))e.setCancelled(true);}
-    @EventHandler public void burn(BlockBurnEvent e){Claim c=plugin.claims().at(e.getBlock().getLocation());if(c!=null&&!c.getFlag(ClaimFlag.FIRE))e.setCancelled(true);}
-    @EventHandler public void mobGrief(EntityChangeBlockEvent e){Claim c=plugin.claims().at(e.getBlock().getLocation());if(c!=null&&!c.getFlag(ClaimFlag.MOB_GRIEFING))e.setCancelled(true);}
 
-    @EventHandler public void move(PlayerMoveEvent e){
-        if(e.getTo()==null)return;
-        if(e.getFrom().getWorld()==e.getTo().getWorld()&&e.getFrom().getChunk().getX()==e.getTo().getChunk().getX()&&e.getFrom().getChunk().getZ()==e.getTo().getChunk().getZ())return;
-        Player p=e.getPlayer();
-        Claim previous=plugin.claims().at(e.getFrom());
-        Claim current=plugin.claims().at(e.getTo());
+    private boolean protectedAgainst(Claim claim, Player player) {
+        return claim != null && !bypass(player) && !claim.isMember(player.getUniqueId());
+    }
 
-        if(current!=null&&!current.getFlag(ClaimFlag.ENTRY)&&protectedAgainst(current,p)){
-            e.setTo(e.getFrom());
+    private boolean allowed(Player player, Location location) {
+        return !protectedAgainst(claimAt(location), player);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void breakBlock(BlockBreakEvent event) {
+        if (!allowed(event.getPlayer(), event.getBlock().getLocation())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void place(BlockPlaceEvent event) {
+        if (!allowed(event.getPlayer(), event.getBlock().getLocation())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void interact(PlayerInteractEvent event) {
+        if (event.getClickedBlock() != null && !allowed(event.getPlayer(), event.getClickedBlock().getLocation())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void bucketEmpty(PlayerBucketEmptyEvent event) {
+        if (!allowed(event.getPlayer(), event.getBlock().getLocation())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void bucketFill(PlayerBucketFillEvent event) {
+        if (!allowed(event.getPlayer(), event.getBlock().getLocation())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void pvp(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof Player victim)) return;
+        if (!(event.getDamager() instanceof Player attacker)) return;
+        Claim claim = claimAt(victim.getLocation());
+        if (claim != null && !claim.getFlag(ClaimFlag.PVP) && protectedAgainst(claim, attacker)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void explode(EntityExplodeEvent event) {
+        event.blockList().removeIf(block -> {
+            Claim claim = claimAt(block.getLocation());
+            return claim != null && !claim.getFlag(ClaimFlag.EXPLOSIONS);
+        });
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void fire(BlockIgniteEvent event) {
+        Claim claim = claimAt(event.getBlock().getLocation());
+        if (claim != null && !claim.getFlag(ClaimFlag.FIRE)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void burn(BlockBurnEvent event) {
+        Claim claim = claimAt(event.getBlock().getLocation());
+        if (claim != null && !claim.getFlag(ClaimFlag.FIRE)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void mobGrief(EntityChangeBlockEvent event) {
+        Claim claim = claimAt(event.getBlock().getLocation());
+        if (claim != null && !claim.getFlag(ClaimFlag.MOB_GRIEFING)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void fluidFlow(BlockFromToEvent event) {
+        Claim source = claimAt(event.getBlock().getLocation());
+        Claim destination = claimAt(event.getToBlock().getLocation());
+        if (destination != null && destination != source) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void move(PlayerMoveEvent event) {
+        if (event.getTo() == null) return;
+        if (event.getFrom().getWorld() == event.getTo().getWorld()
+                && event.getFrom().getChunk().getX() == event.getTo().getChunk().getX()
+                && event.getFrom().getChunk().getZ() == event.getTo().getChunk().getZ()) return;
+
+        Player player = event.getPlayer();
+        Claim current = claimAt(event.getTo());
+        if (current != null && !current.getFlag(ClaimFlag.ENTRY) && protectedAgainst(current, player)) {
+            event.setTo(event.getFrom());
             return;
         }
 
-        UUID currentOwner=current==null?null:current.getOwner();
-        UUID previousOwner=lastClaimOwners.get(p.getUniqueId());
-
-        // Only show the welcome title when the territory owner actually changes.
-        // Moving between adjacent chunks belonging to the same owner must not spam the player.
-        if(!lastClaimOwners.containsKey(p.getUniqueId()) || !Objects.equals(previousOwner,currentOwner)){
-            lastClaimOwners.put(p.getUniqueId(),currentOwner);
-            if(current!=null&&plugin.getConfig().getBoolean("effects.welcome-title.enabled",true)){
-                ClaimEffects.showWelcome(plugin,p,current);
-            }
+        UUID currentOwner = current == null ? null : current.getOwner();
+        UUID previousOwner = lastClaimOwners.get(player.getUniqueId());
+        if (!lastClaimOwners.containsKey(player.getUniqueId()) || !Objects.equals(previousOwner, currentOwner)) {
+            lastClaimOwners.put(player.getUniqueId(), currentOwner);
+            if (current != null && plugin.getConfig().getBoolean("effects.welcome-title.enabled", true)) ClaimEffects.showWelcome(plugin, player, current);
         }
 
-        if(current==null && plugin.getConfig().getBoolean("claim.auto-claim.enabled",true) && p.hasPermission(plugin.getConfig().getString("claim.auto-claim.permission","noxoclaim.autoclaim")) && !p.hasPermission("noxoclaim.bypass")){
-            if(!plugin.getConfig().getBoolean("claim.auto-claim.first-only",false) || plugin.claims().owned(p.getUniqueId()).isEmpty()){
-                plugin.getCommand("claim").getExecutor().onCommand(p,plugin.getCommand("claim"),"claim",new String[0]);
+        if (current == null
+                && plugin.getConfig().getBoolean("claim.auto-claim.enabled", true)
+                && player.hasPermission(plugin.getConfig().getString("claim.auto-claim.permission", "noxoclaim.autoclaim"))
+                && !bypass(player)) {
+            boolean firstOnly = plugin.getConfig().getBoolean("claim.auto-claim.first-only", false);
+            if (!firstOnly || plugin.claims().owned(player.getUniqueId()).isEmpty()) {
+                var command = plugin.getCommand("claim");
+                if (command != null && command.getExecutor() != null) command.getExecutor().onCommand(player, command, "claim", new String[0]);
             }
         }
     }
 
-    @EventHandler public void quit(PlayerQuitEvent event){
+    @EventHandler
+    public void quit(PlayerQuitEvent event) {
         lastClaimOwners.remove(event.getPlayer().getUniqueId());
     }
 }
