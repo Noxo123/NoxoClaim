@@ -18,6 +18,7 @@ public final class ClaimManager {
     private final Map<UUID, Claim> claims = new LinkedHashMap<>();
     private final Map<ChunkKey, Claim> chunkIndex = new HashMap<>();
     private final Map<UUID, Set<UUID>> ownerIndex = new HashMap<>();
+    private long revision;
 
     public ClaimManager(File folder) {
         if (!folder.exists() && !folder.mkdirs()) throw new IllegalStateException("Unable to create claims folder");
@@ -28,6 +29,7 @@ public final class ClaimManager {
 
     public Collection<Claim> all() { return Collections.unmodifiableCollection(new ArrayList<>(claims.values())); }
     public Claim get(UUID id) { return id == null ? null : claims.get(id); }
+    public long revision() { return revision; }
 
     public Claim at(Location location) {
         if (location == null || location.getWorld() == null) return null;
@@ -63,12 +65,14 @@ public final class ClaimManager {
         if (overlaps(claim)) throw new IllegalArgumentException("Claim overlaps an existing claim");
         claims.put(claim.getId(), claim);
         index(claim);
+        revision++;
         save();
     }
 
     public void remove(Claim claim) {
         if (claim == null || claims.remove(claim.getId()) == null) return;
         unindex(claim);
+        revision++;
         save();
     }
 
