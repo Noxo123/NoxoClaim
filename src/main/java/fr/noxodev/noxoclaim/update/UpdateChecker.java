@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -26,6 +25,7 @@ import java.util.regex.Pattern;
 /** Secure commit-based updater using the dedicated GitHub updates branch. */
 public final class UpdateChecker {
     private static final String UPDATE_BASE = "https://raw.githubusercontent.com/Noxo123/NoxoClaim/updates/";
+    private static final String GITHUB_RAW_BASE = "https://github.com/Noxo123/NoxoClaim/raw/refs/heads/updates/";
     private static final String GITHUB_API_BASE = "https://api.github.com/repos/Noxo123/NoxoClaim/contents/";
     private static final String MANIFEST_URL = UPDATE_BASE + "update.json";
     private static final Pattern COMMIT = Pattern.compile("\\\"commit\\\"\\s*:\\s*\\\"([0-9a-fA-F]{40})\\\"");
@@ -45,13 +45,8 @@ public final class UpdateChecker {
 
     public void check(boolean notifyConsole) { checkInternal(notifyConsole, null, null); }
 
-    /** Checks the current update channel. If requestedCommit is non-null, only that exact commit is accepted. */
     public void checkManual(CommandSender sender) { checkManual(sender, null); }
 
-    /**
-     * Manual update/check. With a commit SHA, the updater refuses to install a different commit.
-     * This makes /claimadmin update <sha> deterministic and safe.
-     */
     public void checkManual(CommandSender sender, String requestedCommit) {
         if (requestedCommit != null) requestedCommit = requestedCommit.trim().toLowerCase(Locale.ROOT);
         if (requestedCommit != null && !SHA.matcher(requestedCommit).matches()) {
@@ -62,11 +57,8 @@ public final class UpdateChecker {
             sender.sendMessage("§e[NoxoClaim] Une vérification des mises à jour est déjà en cours.");
             return;
         }
-        if (requestedCommit == null) {
-            sender.sendMessage("§b[NoxoClaim] Vérification du canal de mise à jour...");
-        } else {
-            sender.sendMessage("§b[NoxoClaim] Recherche du commit §f" + shortSha(requestedCommit) + "§b...");
-        }
+        if (requestedCommit == null) sender.sendMessage("§b[NoxoClaim] Vérification du canal de mise à jour...");
+        else sender.sendMessage("§b[NoxoClaim] Recherche du commit §f" + shortSha(requestedCommit) + "§b...");
         checkInternal(true, sender, requestedCommit);
     }
 
@@ -77,31 +69,26 @@ public final class UpdateChecker {
         }
         if (sender == null && !plugin.getConfig().getBoolean("updates.enabled", true)) return;
         checking = true;
-
         final String targetCommit = requestedCommit == null ? null : requestedCommit.toLowerCase(Locale.ROOT);
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             try {
                 Manifest manifest = fetchManifest();
-
                 if (targetCommit != null && !manifest.commit.equalsIgnoreCase(targetCommit)) {
-                    report(sender, notifyConsole,
-                            "§c[NoxoClaim] Le commit demandé §f" + shortSha(targetCommit)
-                                    + "§c n'est pas disponible dans le canal de mise à jour actuel. "
-                                    + "Commit actuellement publié : §f" + shortSha(manifest.commit) + "§c.", false);
+                    report(sender, notifyConsole, "§c[NoxoClaim] Le commit demandé §f" + shortSha(targetCommit)
+                            + "§c n'est pas disponible dans le canal de mise à jour actuel. Commit actuellement publié : §f"
+                            + shortSha(manifest.commit) + "§c.", false);
                     return;
                 }
 
                 String localCommit = getBuildCommit();
                 Path updateDir = updateDirectory();
                 Path pending = updateDir.resolve("NoxoClaim.pending");
-
                 if (Files.isRegularFile(pending)) {
                     String pendingCommit = Files.readString(pending).trim();
                     if (manifest.commit.equalsIgnoreCase(pendingCommit) && targetCommit == null) {
-                        report(sender, notifyConsole,
-                                "§e[NoxoClaim] Mise à jour §f" + shortSha(manifest.commit)
-                                        + "§e déjà préparée dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
+                        report(sender, notifyConsole, "§e[NoxoClaim] Mise à jour §f" + shortSha(manifest.commit)
+                                + "§e déjà préparée dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
                         return;
                     }
                     if (targetCommit == null || !manifest.commit.equalsIgnoreCase(targetCommit)) Files.deleteIfExists(pending);
@@ -109,43 +96,35 @@ public final class UpdateChecker {
 
                 if (targetCommit == null && manifest.commit.equalsIgnoreCase(localCommit)) {
                     plugin.setUpdateInfo(UpdateInfo.upToDate(plugin.getDescription().getVersion(), shortSha(manifest.commit), UPDATE_BASE));
-                    report(sender, notifyConsole,
-                            "§a[NoxoClaim] NoxoClaim est à jour (§f" + shortSha(manifest.commit) + "§a).", false);
+                    report(sender, notifyConsole, "§a[NoxoClaim] NoxoClaim est à jour (§f" + shortSha(manifest.commit) + "§a).", false);
                     return;
                 }
 
                 String paperVersion = detectSupportedPaperVersion();
                 if (paperVersion == null) {
-                    report(sender, notifyConsole,
-                            "§e[NoxoClaim] Une mise à jour existe, mais aucune build compatible avec cette version de Paper n'est publiée.", false);
+                    report(sender, notifyConsole, "§e[NoxoClaim] Une mise à jour existe, mais aucune build compatible avec cette version de Paper n'est publiée.", false);
                     return;
                 }
-
                 Artifact artifact = manifest.artifact(paperVersion);
                 if (artifact == null) {
-                    report(sender, notifyConsole,
-                            "§e[NoxoClaim] Aucun artefact compatible pour Paper " + paperVersion + ".", false);
+                    report(sender, notifyConsole, "§e[NoxoClaim] Aucun artefact compatible pour Paper " + paperVersion + ".", false);
                     return;
                 }
 
                 plugin.setUpdateInfo(new UpdateInfo(true, plugin.getDescription().getVersion(),
                         "build-" + shortSha(manifest.commit), UPDATE_BASE, "Commit " + shortSha(manifest.commit)));
-
                 if (targetCommit == null && !plugin.getConfig().getBoolean("updates.auto-update", true)) {
-                    report(sender, notifyConsole,
-                            "§e[NoxoClaim] Nouvelle build disponible : §f" + shortSha(manifest.commit), true);
+                    report(sender, notifyConsole, "§e[NoxoClaim] Nouvelle build disponible : §f" + shortSha(manifest.commit), true);
                     return;
                 }
 
                 downloadAndVerify(artifact, manifest.commit);
                 Files.createDirectories(updateDir);
                 Files.writeString(pending, manifest.commit);
-                report(sender, true,
-                        "§a[NoxoClaim] ✓ Commit §f" + shortSha(manifest.commit)
-                                + "§a vérifié et préparé dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
+                report(sender, true, "§a[NoxoClaim] ✓ Commit §f" + shortSha(manifest.commit)
+                        + "§a vérifié et préparé dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
             } catch (Exception e) {
-                report(sender, notifyConsole,
-                        "§c[NoxoClaim] Mise à jour impossible : " + safeMessage(e), false);
+                report(sender, notifyConsole, "§c[NoxoClaim] Mise à jour impossible : " + safeMessage(e), false);
             } finally {
                 checking = false;
             }
@@ -156,7 +135,6 @@ public final class UpdateChecker {
         String json = request(MANIFEST_URL + "?commit=" + System.currentTimeMillis(), "application/json");
         Matcher commitMatcher = COMMIT.matcher(json);
         if (!commitMatcher.find()) throw new IllegalStateException("commit absent du manifeste");
-
         Manifest manifest = new Manifest(commitMatcher.group(1));
         Matcher artifactMatcher = DOWNLOAD.matcher(json);
         while (artifactMatcher.find()) manifest.add(new Artifact(artifactMatcher.group(1), artifactMatcher.group(2), artifactMatcher.group(3)));
@@ -165,9 +143,7 @@ public final class UpdateChecker {
     }
 
     private void downloadAndVerify(Artifact artifact, String expectedCommit) throws Exception {
-        if (artifact.file.contains("..") || artifact.file.contains("/") || artifact.file.contains("\\")) {
-            throw new IllegalStateException("nom de fichier d'artefact refusé");
-        }
+        if (artifact.file.contains("..") || artifact.file.contains("/") || artifact.file.contains("\\")) throw new IllegalStateException("nom de fichier d'artefact refusé");
         if (!artifact.file.contains(expectedCommit)) throw new IllegalStateException("artefact non lié au commit demandé");
 
         Path updateDir = updateDirectory();
@@ -182,9 +158,9 @@ public final class UpdateChecker {
                 HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url))
                         .timeout(Duration.ofSeconds(Math.max(30L, plugin.getConfig().getLong("updates.download-timeout-seconds", 120L))))
                         .header("User-Agent", "NoxoClaim-Updater/" + plugin.getDescription().getVersion())
+                        .header("Accept", "application/octet-stream")
                         .GET();
                 if (url.startsWith(GITHUB_API_BASE)) builder.header("Accept", "application/vnd.github.raw");
-                else builder.header("Accept", "application/octet-stream");
 
                 HttpResponse<InputStream> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
                 if (response.statusCode() != 200) {
@@ -202,19 +178,16 @@ public final class UpdateChecker {
         }
 
         if (!Files.isRegularFile(temp)) throw last != null ? last : new IllegalStateException("téléchargement impossible");
-
         long size = Files.size(temp);
         if (size < 10_000 || size > 100_000_000L) {
             Files.deleteIfExists(temp);
             throw new IllegalStateException("taille du JAR téléchargé invalide");
         }
-
         String actualSha256 = sha256(temp);
         if (!actualSha256.equalsIgnoreCase(artifact.sha256)) {
             Files.deleteIfExists(temp);
             throw new IllegalStateException("SHA-256 invalide : le fichier ne correspond pas au manifeste");
         }
-
         try {
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } catch (Exception ignored) {
@@ -226,6 +199,7 @@ public final class UpdateChecker {
     static String[] buildArtifactUrls(String file) {
         return new String[]{
                 UPDATE_BASE + "assets/" + file,
+                GITHUB_RAW_BASE + "assets/" + file,
                 GITHUB_API_BASE + "assets/" + file + "?ref=updates"
         };
     }
@@ -286,11 +260,7 @@ public final class UpdateChecker {
     }
 
     private static String shortSha(String sha) { return sha == null || sha.length() < 7 ? sha : sha.substring(0, 7); }
-
-    private static String safeMessage(Exception e) {
-        String message = e.getMessage();
-        return message == null || message.isBlank() ? e.getClass().getSimpleName() : message;
-    }
+    private static String safeMessage(Exception e) { String message = e.getMessage(); return message == null || message.isBlank() ? e.getClass().getSimpleName() : message; }
 
     private static final class Manifest {
         private final String commit;
