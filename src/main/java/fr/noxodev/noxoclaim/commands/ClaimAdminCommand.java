@@ -22,9 +22,10 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
 
     public ClaimAdminCommand(NoxoClaim plugin) { this.plugin = plugin; }
     public void setDashboard(ClaimAdminGui dashboard) { this.dashboard = dashboard; }
+    private boolean canAdmin(CommandSender sender) { return sender.hasPermission("noxoclaim.admin") || sender.hasPermission("noxoclaim.admin.dashboard") || sender.hasPermission("noxoclaim.admin.list") || sender.hasPermission("noxoclaim.admin.delete") || sender.hasPermission("noxoclaim.admin.save") || sender.hasPermission("noxoclaim.admin.reload") || sender.hasPermission("noxoclaim.admin.update") || sender.hasPermission("noxoclaim.admin.debug") || sender.hasPermission("noxoclaim.admin.hud"); }
 
     @Override public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!sender.hasPermission("noxoclaim.admin")) { plugin.messages().send(sender, "no-permission"); return true; }
+        if (!canAdmin(sender)) { plugin.messages().send(sender, "no-permission"); return true; }
         if (args.length == 0) { help(sender); return true; }
         switch (args[0].toLowerCase(Locale.ROOT)) {
             case "dashboard", "panel", "gui" -> {
@@ -38,15 +39,9 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
             }
             case "delete", "remove" -> { if (!sender.hasPermission("noxoclaim.admin.delete")) plugin.messages().send(sender, "no-permission"); else delete(sender, args); }
             case "deleteall" -> { if (!sender.hasPermission("noxoclaim.admin.delete")) plugin.messages().send(sender, "no-permission"); else deleteAll(sender, args); }
-            case "save" -> {
-                if (!sender.hasPermission("noxoclaim.admin.save")) { plugin.messages().send(sender, "no-permission"); return true; }
-                plugin.claims().save(); sender.sendMessage("§a[NoxoClaim] Claims sauvegardés.");
-            }
-            case "reload" -> {
-                if (!sender.hasPermission("noxoclaim.admin.reload")) { plugin.messages().send(sender, "no-permission"); return true; }
-                plugin.reloadConfig(); sender.sendMessage("§a[NoxoClaim] Configuration rechargée. Les données en mémoire n'ont pas été réinitialisées.");
-            }
-            case "status", "info" -> sendStatus(sender);
+            case "save" -> { if (!sender.hasPermission("noxoclaim.admin.save")) { plugin.messages().send(sender, "no-permission"); return true; } plugin.claims().save(); sender.sendMessage("§a[NoxoClaim] Claims sauvegardés."); }
+            case "reload" -> { if (!sender.hasPermission("noxoclaim.admin.reload")) { plugin.messages().send(sender, "no-permission"); return true; } plugin.reloadConfig(); sender.sendMessage("§a[NoxoClaim] Configuration rechargée."); }
+            case "status", "info" -> { if (!canAdmin(sender)) { plugin.messages().send(sender, "no-permission"); return true; } sendStatus(sender); }
             case "update", "updates", "check" -> update(sender, args);
             case "hud" -> hud(sender, args);
             case "debug" -> {
@@ -69,21 +64,14 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
 
     private void delete(CommandSender sender, String[] args) {
         if (args.length < 2) { sender.sendMessage("§cUsage: /claimadmin delete <uuid>"); return; }
-        try {
-            var claim = plugin.claims().get(UUID.fromString(args[1]));
-            if (claim == null) sender.sendMessage("§cClaim introuvable.");
-            else { plugin.claims().remove(claim); plugin.mapIntegration().claimChanged(claim, "removed"); sender.sendMessage("§aClaim supprimé."); }
-        } catch (IllegalArgumentException exception) { sender.sendMessage("§cUUID invalide."); }
+        try { var claim = plugin.claims().get(UUID.fromString(args[1])); if (claim == null) sender.sendMessage("§cClaim introuvable."); else { plugin.claims().remove(claim); plugin.mapIntegration().claimChanged(claim, "removed"); sender.sendMessage("§aClaim supprimé."); } }
+        catch (IllegalArgumentException exception) { sender.sendMessage("§cUUID invalide."); }
     }
 
     private void deleteAll(CommandSender sender, String[] args) {
         if (args.length < 2) { sender.sendMessage("§cUsage: /claimadmin deleteall <uuid joueur>"); return; }
-        try {
-            UUID uuid = UUID.fromString(args[1]);
-            var owned = new ArrayList<>(plugin.claims().owned(uuid));
-            owned.forEach(claim -> { plugin.claims().remove(claim); plugin.mapIntegration().claimChanged(claim, "removed"); });
-            sender.sendMessage("§a" + owned.size() + " claim(s) supprimé(s).");
-        } catch (IllegalArgumentException exception) { sender.sendMessage("§cUUID joueur invalide."); }
+        try { UUID uuid = UUID.fromString(args[1]); var owned = new ArrayList<>(plugin.claims().owned(uuid)); owned.forEach(claim -> { plugin.claims().remove(claim); plugin.mapIntegration().claimChanged(claim, "removed"); }); sender.sendMessage("§a" + owned.size() + " claim(s) supprimé(s)."); }
+        catch (IllegalArgumentException exception) { sender.sendMessage("§cUUID joueur invalide."); }
     }
 
     private void update(CommandSender sender, String[] args) {
@@ -91,7 +79,7 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         if (plugin.updateChecker() == null) { sender.sendMessage("§c[NoxoClaim] Le système de mise à jour n'est pas disponible."); return; }
         if (args.length > 2) { sender.sendMessage("§cUsage: /claimadmin update [commit]"); return; }
         String requestedCommit = args.length == 2 ? args[1].trim() : null;
-        if (requestedCommit != null && !requestedCommit.matches("(?i)[0-9a-f]{40}")) { sender.sendMessage("§c[NoxoClaim] Commit invalide. Utilise le SHA complet de 40 caractères."); return; }
+        if (requestedCommit != null && !requestedCommit.matches("(?i)[0-9a-f]{40}")) { sender.sendMessage("§c[NoxoClaim] Commit invalide."); return; }
         plugin.updateChecker().checkManual(sender, requestedCommit);
     }
 
@@ -99,11 +87,8 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         if (!sender.hasPermission("noxoclaim.admin.hud")) { plugin.messages().send(sender, "no-permission"); return; }
         if (args.length == 1 || args[1].equalsIgnoreCase("status")) { hudStatus(sender); return; }
         switch (args[1].toLowerCase(Locale.ROOT)) {
-            case "install", "reinstall" -> {
-                fr.noxodev.noxoclaim.hud.HudEngineInstaller.ensureInstalled(plugin);
-                sender.sendMessage("§a[NoxoClaim] Installation HUDEngine demandée. Redémarre si nécessaire.");
-            }
-            case "enable" -> { plugin.getConfig().set("hudengine.enabled", true); plugin.saveConfig(); sender.sendMessage("§a[NoxoClaim] Intégration HUDEngine activée. Recharge/redémarre NoxoClaim."); }
+            case "install", "reinstall" -> { fr.noxodev.noxoclaim.hud.HudEngineInstaller.ensureInstalled(plugin); sender.sendMessage("§a[NoxoClaim] Installation HUDEngine demandée. Redémarre si nécessaire."); }
+            case "enable" -> { plugin.getConfig().set("hudengine.enabled", true); plugin.saveConfig(); sender.sendMessage("§a[NoxoClaim] Intégration HUDEngine activée."); }
             case "disable" -> { plugin.getConfig().set("hudengine.enabled", false); plugin.saveConfig(); if (plugin.hudEngine() != null && sender instanceof Player player) plugin.hudEngine().hide(player); sender.sendMessage("§e[NoxoClaim] Intégration HUDEngine désactivée."); }
             case "refresh" -> refreshHud(sender);
             default -> hudHelp(sender);
@@ -112,8 +97,7 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
 
     private void refreshHud(CommandSender sender) {
         if (plugin.hudEngine() == null || !plugin.hudEngine().isReady()) { sender.sendMessage("§c[NoxoClaim] HUDEngine n'est pas prêt."); return; }
-        if (sender instanceof Player player) { plugin.hudEngine().refresh(player); sender.sendMessage("§a[NoxoClaim] HUD actualisé."); }
-        else { plugin.hudEngine().refreshAll(); sender.sendMessage("§a[NoxoClaim] HUD actualisé pour tous les joueurs connectés."); }
+        if (sender instanceof Player player) { plugin.hudEngine().refresh(player); sender.sendMessage("§a[NoxoClaim] HUD actualisé."); } else { plugin.hudEngine().refreshAll(); sender.sendMessage("§a[NoxoClaim] HUD actualisé pour tous les joueurs connectés."); }
     }
 
     private void hudStatus(CommandSender sender) {
@@ -138,8 +122,7 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§7PlugManX: " + (plugin.isPlugManXAvailable() ? "§aDétecté" : "§7Absent"));
         sender.sendMessage("§7HUDEngine: " + hudState());
         sender.sendMessage("§7Claims: §f" + plugin.claims().all().size());
-        var update = plugin.updateInfo();
-        sender.sendMessage("§7Update: " + (update == null ? "§eNon vérifiée" : update.available() ? "§eDisponible (" + update.latestVersion() + ")" : "§aÀ jour"));
+        sender.sendMessage("§7Update: " + updateState());
     }
 
     private void help(CommandSender sender) {
