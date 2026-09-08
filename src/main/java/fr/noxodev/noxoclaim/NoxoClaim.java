@@ -109,5 +109,9 @@ public final class NoxoClaim extends JavaPlugin {
     public Economy economy() { return economy; }
     public double chunkPrice() { return getConfig().getDouble("economy.cost-per-chunk", 500.0); }
     public ClaimMapIntegration mapIntegration() { return mapIntegration; }
-    @Override public void onDisable() { if (claims != null) claims.save(); getLogger().info("NoxoClaim désactivé proprement."); }
+    @Override public void onDisable() {
+        if (hudEngine != null) hudEngine.stop();
+        if (claims != null) claims.save();
+        getLogger().info("NoxoClaim désactivé proprement.");
+    }
 }
