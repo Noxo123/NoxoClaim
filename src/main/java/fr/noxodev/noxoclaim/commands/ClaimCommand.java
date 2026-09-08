@@ -61,7 +61,15 @@ public final class ClaimCommand implements CommandExecutor, TabCompleter {
         double cost=plugin.chunkPrice();
         if(plugin.economy()!=null&&cost>0&&!plugin.charge(p,cost)){p.sendMessage(plugin.messages().get("prefix")+plugin.messages().format("not-enough-money",Map.of("cost",plugin.formatMoney(cost),"chunks","1")));return false;}
         Claim c=new Claim(UUID.randomUUID(),p.getUniqueId(),world.getName(),cx*16,cz*16,cx*16+15,cz*16+15,"Chunk "+cx+", "+cz);
+        applyDefaultFlags(c);
         plugin.claims().add(c); plugin.mapIntegration().claimChanged(c,"created"); p.sendMessage("§a§l✓ Chunk claimé ! §7"+world.getName()+" §8• §f"+cx+", "+cz); ClaimEffects.onClaim(plugin,p); return true;
+    }
+
+    private void applyDefaultFlags(Claim claim) {
+        for (ClaimFlag flag : ClaimFlag.values()) {
+            String path = "claim.default-flags." + flag.name().toLowerCase(Locale.ROOT).replace('_', '-');
+            if (plugin.getConfig().contains(path)) claim.setFlag(flag, plugin.getConfig().getBoolean(path));
+        }
     }
 
     public void teleportToClaim(Player p,Claim c){ if(c==null)return; Location t=c.getHome(); if(t==null){World w=Bukkit.getWorld(c.getWorld()); if(w==null){plugin.messages().send(p,"home-not-found");return;} int x=c.getMinX()+8,z=c.getMinZ()+8; t=new Location(w,x+.5,w.getHighestBlockYAt(x,z)+1,z+.5);} new TeleportTask(plugin,p,t,plugin.getConfig().getInt("teleport.delay-seconds",3),plugin.getConfig().getBoolean("teleport.cancel-on-move",true)); }
