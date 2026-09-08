@@ -5,7 +5,6 @@ import fr.noxodev.noxoclaim.effects.ClaimEffects;
 import fr.noxodev.noxoclaim.models.Claim;
 import fr.noxodev.noxoclaim.models.ClaimFlag;
 import org.bukkit.Location;
-import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -36,21 +35,11 @@ public final class ClaimProtectionListener implements Listener {
 
     public ClaimProtectionListener(NoxoClaim plugin) { this.plugin = plugin; }
 
-    private Claim claimAt(Location location) {
-        return location == null ? null : plugin.claims().at(location);
-    }
-
-    private boolean bypass(Player player) {
-        return player.hasPermission("noxoclaim.bypass");
-    }
-
-    private boolean protectedAgainst(Claim claim, Player player) {
-        return claim != null && !bypass(player) && !claim.isMember(player.getUniqueId());
-    }
-
-    private boolean allowed(Player player, Location location) {
-        return !protectedAgainst(claimAt(location), player);
-    }
+    private Claim claimAt(Location location) { return location == null ? null : plugin.claims().at(location); }
+    private boolean bypass(Player player) { return player.hasPermission("noxoclaim.bypass"); }
+    private boolean protectedAgainst(Claim claim, Player player) { return claim != null && !bypass(player) && !claim.isMember(player.getUniqueId()); }
+    private boolean blocksProtected() { return plugin.getConfig().getBoolean("claim.protection.blocks", true); }
+    private boolean allowed(Player player, Location location) { return !blocksProtected() || !protectedAgainst(claimAt(location), player); }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void breakBlock(BlockBreakEvent event) {
@@ -79,10 +68,9 @@ public final class ClaimProtectionListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void pvp(EntityDamageByEntityEvent event) {
-        if (!(event.getEntity() instanceof Player victim)) return;
-        if (!(event.getDamager() instanceof Player attacker)) return;
+        if (!(event.getEntity() instanceof Player victim) || !(event.getDamager() instanceof Player attacker)) return;
         Claim claim = claimAt(victim.getLocation());
-        if (claim != null && !claim.getFlag(ClaimFlag.PVP) && protectedAgainst(claim, attacker)) event.setCancelled(true);
+        if (claim != null && !claim.getFlag(ClaimFlag.PVP) && !bypass(attacker)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -115,7 +103,8 @@ public final class ClaimProtectionListener implements Listener {
     public void fluidFlow(BlockFromToEvent event) {
         Claim source = claimAt(event.getBlock().getLocation());
         Claim destination = claimAt(event.getToBlock().getLocation());
-        if (destination != null && destination != source) event.setCancelled(true);
+        if (source != null && destination != source && !source.getFlag(ClaimFlag.FLUIDS)) { event.setCancelled(true); return; }
+        if (destination != null && destination != source && !destination.getFlag(ClaimFlag.FLUIDS)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -152,7 +141,5 @@ public final class ClaimProtectionListener implements Listener {
     }
 
     @EventHandler
-    public void quit(PlayerQuitEvent event) {
-        lastClaimOwners.remove(event.getPlayer().getUniqueId());
-    }
+    public void quit(PlayerQuitEvent event) { lastClaimOwners.remove(event.getPlayer().getUniqueId()); }
 }
