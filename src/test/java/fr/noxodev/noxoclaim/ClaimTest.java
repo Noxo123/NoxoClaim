@@ -47,4 +47,8 @@ class ClaimTest {
     @Test void t23Fire() { assertFalse(c.getFlag(ClaimFlag.FIRE)); }
     @Test void t24Explosions() { assertFalse(c.getFlag(ClaimFlag.EXPLOSIONS)); }
     @Test void t25MobGrief() { assertFalse(c.getFlag(ClaimFlag.MOB_GRIEFING)); }
+    @Test void t26Fluids() { assertFalse(c.getFlag(ClaimFlag.FLUIDS)); }
+    @Test void t27MembersAreReadOnly() { assertThrows(UnsupportedOperationException.class, () -> c.getMembers().add(UUID.randomUUID())); }
+    @Test void t28FlagsAreCopied() { var flags = c.getFlags(); flags.put(ClaimFlag.PVP, true); assertFalse(c.getFlag(ClaimFlag.PVP)); }
+    @Test void t29NullLocation() { assertFalse(c.contains(null)); }
 }

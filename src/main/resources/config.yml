@@ -9,6 +9,7 @@ claim:
     explosions: false
     fire: false
     mob-griefing: false
+    fluids: false
     entry: true
   protection:
     blocks: true

@@ -1,2 +1,11 @@
 package fr.noxodev.noxoclaim.models;
-public enum ClaimFlag { PVP, EXPLOSIONS, FIRE, MOB_GRIEFING, ENTRY }
+
+/** Protection flags applied to a claim. */
+public enum ClaimFlag {
+    PVP,
+    EXPLOSIONS,
+    FIRE,
+    MOB_GRIEFING,
+    FLUIDS,
+    ENTRY
+}
