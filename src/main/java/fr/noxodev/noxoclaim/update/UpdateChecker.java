@@ -27,12 +27,14 @@ public final class UpdateChecker {
     private static final String UPDATE_BASE = "https://raw.githubusercontent.com/Noxo123/NoxoClaim/updates/";
     private static final String GITHUB_RAW_BASE = "https://github.com/Noxo123/NoxoClaim/raw/refs/heads/updates/";
     private static final String GITHUB_API_BASE = "https://api.github.com/repos/Noxo123/NoxoClaim/contents/";
+    private static final String MAIN_HEAD_URL = "https://api.github.com/repos/Noxo123/NoxoClaim/commits/main";
     private static final String MANIFEST_URL = UPDATE_BASE + "update.json";
     private static final Pattern COMMIT = Pattern.compile("\\\"commit\\\"\\s*:\\s*\\\"([0-9a-fA-F]{40})\\\"");
     private static final Pattern DOWNLOAD = Pattern.compile("\\\"(26\\.2|26\\.1\\.2)\\\"\\s*:\\s*\\{\\s*"
             + "\\\"file\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"\\s*,\\s*"
             + "\\\"sha256\\\"\\s*:\\s*\\\"([0-9a-fA-F]{64})\\\"\\s*\\}");
     private static final Pattern SHA = Pattern.compile("(?i)^[0-9a-f]{40}$");
+    private static final Pattern MAIN_SHA = Pattern.compile("\\\"sha\\\"\\s*:\\s*\\\"([0-9a-fA-F]{40})\\\"");
 
     private final NoxoClaim plugin;
     private final HttpClient client = HttpClient.newBuilder()
@@ -42,9 +44,7 @@ public final class UpdateChecker {
     private volatile boolean checking;
 
     public UpdateChecker(NoxoClaim plugin) { this.plugin = plugin; }
-
     public void check(boolean notifyConsole) { checkInternal(notifyConsole, null, null); }
-
     public void checkManual(CommandSender sender) { checkManual(sender, null); }
 
     public void checkManual(CommandSender sender, String requestedCommit) {
@@ -82,6 +82,15 @@ public final class UpdateChecker {
                 }
 
                 String localCommit = getBuildCommit();
+                String publishedHead = fetchMainHead();
+                if (!manifest.commit.equalsIgnoreCase(publishedHead)) {
+                    report(sender, notifyConsole,
+                            "§e[NoxoClaim] Canal de mise à jour temporairement obsolète : §f" + shortSha(manifest.commit)
+                                    + "§e, HEAD de main : §f" + shortSha(publishedHead)
+                                    + "§e. Aucune ancienne build ne sera installée.", true);
+                    return;
+                }
+
                 Path updateDir = updateDirectory();
                 Path pending = updateDir.resolve("NoxoClaim.pending");
                 if (Files.isRegularFile(pending)) {
@@ -142,6 +151,13 @@ public final class UpdateChecker {
         return manifest;
     }
 
+    private String fetchMainHead() throws Exception {
+        String json = request(MAIN_HEAD_URL + "?t=" + System.currentTimeMillis(), "application/vnd.github+json");
+        Matcher matcher = MAIN_SHA.matcher(json);
+        if (!matcher.find()) throw new IllegalStateException("HEAD de main introuvable");
+        return matcher.group(1);
+    }
+
     private void downloadAndVerify(Artifact artifact, String expectedCommit) throws Exception {
         if (artifact.file.contains("..") || artifact.file.contains("/") || artifact.file.contains("\\")) throw new IllegalStateException("nom de fichier d'artefact refusé");
         if (!artifact.file.contains(expectedCommit)) throw new IllegalStateException("artefact non lié au commit demandé");
@@ -161,22 +177,18 @@ public final class UpdateChecker {
                         .header("Accept", "application/octet-stream")
                         .GET();
                 if (url.startsWith(GITHUB_API_BASE)) builder.header("Accept", "application/vnd.github.raw");
-
                 HttpResponse<InputStream> response = client.send(builder.build(), HttpResponse.BodyHandlers.ofInputStream());
                 if (response.statusCode() != 200) {
                     response.body().close();
                     throw new IllegalStateException("téléchargement HTTP " + response.statusCode());
                 }
-                try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) {
-                    in.transferTo(out);
-                }
+                try (InputStream in = response.body(); OutputStream out = Files.newOutputStream(temp)) { in.transferTo(out); }
                 break;
             } catch (Exception e) {
                 last = e;
                 Files.deleteIfExists(temp);
             }
         }
-
         if (!Files.isRegularFile(temp)) throw last != null ? last : new IllegalStateException("téléchargement impossible");
         long size = Files.size(temp);
         if (size < 10_000 || size > 100_000_000L) {
@@ -188,24 +200,18 @@ public final class UpdateChecker {
             Files.deleteIfExists(temp);
             throw new IllegalStateException("SHA-256 invalide : le fichier ne correspond pas au manifeste");
         }
-        try {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (Exception ignored) {
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
-        }
+        try { Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
+        catch (Exception ignored) { Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING); }
         plugin.getLogger().info("Mise à jour préparée : " + artifact.file + " (SHA-256 vérifié).");
     }
 
     static String[] buildArtifactUrls(String file) {
-        return new String[]{
-                UPDATE_BASE + "assets/" + file,
+        return new String[]{UPDATE_BASE + "assets/" + file,
                 GITHUB_RAW_BASE + "assets/" + file,
-                GITHUB_API_BASE + "assets/" + file + "?ref=updates"
-        };
+                GITHUB_API_BASE + "assets/" + file + "?ref=updates"};
     }
 
     private Path updateDirectory() { return plugin.getDataFolder().getParentFile().toPath().resolve("update"); }
-
     private String detectSupportedPaperVersion() {
         String version = Bukkit.getMinecraftVersion();
         if (version == null) return null;
@@ -214,61 +220,36 @@ public final class UpdateChecker {
         if (version.startsWith("26.1.2")) return "26.1.2";
         return null;
     }
-
     private String getBuildCommit() {
         try (InputStream in = plugin.getResource("build-info.properties")) {
             if (in == null) return "unknown";
-            Properties p = new Properties();
-            p.load(in);
-            return p.getProperty("commit", "unknown").trim();
-        } catch (Exception e) {
-            return "unknown";
-        }
+            Properties p = new Properties(); p.load(in); return p.getProperty("commit", "unknown").trim();
+        } catch (Exception e) { return "unknown"; }
     }
-
     private String request(String url, String accept) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(20))
-                .header("Accept", accept)
-                .header("Cache-Control", "no-cache")
-                .header("Pragma", "no-cache")
-                .header("User-Agent", "NoxoClaim-Updater/" + plugin.getDescription().getVersion())
-                .GET().build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20))
+                .header("Accept", accept).header("Cache-Control", "no-cache").header("Pragma", "no-cache")
+                .header("User-Agent", "NoxoClaim-Updater/" + plugin.getDescription().getVersion()).GET().build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 200) throw new IllegalStateException("GitHub HTTP " + response.statusCode());
         return response.body();
     }
-
     private static String sha256(Path file) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        try (InputStream in = Files.newInputStream(file)) {
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read);
-        }
-        StringBuilder result = new StringBuilder(64);
-        for (byte b : digest.digest()) result.append(String.format("%02x", b));
-        return result.toString();
+        try (InputStream in = Files.newInputStream(file)) { byte[] buffer = new byte[8192]; int read; while ((read = in.read(buffer)) != -1) digest.update(buffer, 0, read); }
+        StringBuilder result = new StringBuilder(64); for (byte b : digest.digest()) result.append(String.format("%02x", b)); return result.toString();
     }
-
     private void report(CommandSender sender, boolean console, String message, boolean warning) {
         if (sender != null) Bukkit.getScheduler().runTask(plugin, () -> sender.sendMessage(message));
-        if (console) {
-            String plain = message.replaceAll("§.", "");
-            if (warning) plugin.getLogger().warning(plain); else plugin.getLogger().info(plain);
-        }
+        if (console) { String plain = message.replaceAll("§.", ""); if (warning) plugin.getLogger().warning(plain); else plugin.getLogger().info(plain); }
     }
-
     private static String shortSha(String sha) { return sha == null || sha.length() < 7 ? sha : sha.substring(0, 7); }
     private static String safeMessage(Exception e) { String message = e.getMessage(); return message == null || message.isBlank() ? e.getClass().getSimpleName() : message; }
-
     private static final class Manifest {
-        private final String commit;
-        private final Map<String, Artifact> artifacts = new HashMap<>();
+        private final String commit; private final Map<String, Artifact> artifacts = new HashMap<>();
         private Manifest(String commit) { this.commit = commit; }
         private void add(Artifact artifact) { artifacts.put(artifact.paper, artifact); }
         private Artifact artifact(String paper) { return artifacts.get(paper); }
     }
-
     private record Artifact(String paper, String file, String sha256) {}
 }
