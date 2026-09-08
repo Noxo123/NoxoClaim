@@ -28,17 +28,44 @@ commands:
     usage: /chome <nom|list>
   claimadmin:
     description: Administration NoxoClaim
-    usage: /claimadmin <list|delete|deleteall|save|reload|update|info|debug|hud>
+    usage: /claimadmin <dashboard|list|delete|deleteall|save|reload|update|info|debug|hud>
     permission: noxoclaim.admin
 permissions:
   noxoclaim.admin:
     description: Accès complet à NoxoClaim
+    default: op
+    children:
+      noxoclaim.admin.dashboard: true
+      noxoclaim.admin.list: true
+      noxoclaim.admin.delete: true
+      noxoclaim.admin.save: true
+      noxoclaim.admin.reload: true
+      noxoclaim.admin.update: true
+      noxoclaim.admin.debug: true
+      noxoclaim.admin.hud: true
+  noxoclaim.admin.dashboard:
+    description: Accès au dashboard d'administration NoxoClaim
+    default: op
+  noxoclaim.admin.list:
+    description: Voir la liste des claims administrateur
+    default: op
+  noxoclaim.admin.delete:
+    description: Supprimer des claims administrateur
+    default: op
+  noxoclaim.admin.save:
+    description: Sauvegarder les claims
     default: op
   noxoclaim.admin.update:
     description: Autorise la vérification et préparation des mises à jour
     default: op
   noxoclaim.admin.reload:
     description: Autorise le rechargement de la configuration
+    default: op
+  noxoclaim.admin.debug:
+    description: Voir les informations de debug NoxoClaim
+    default: op
+  noxoclaim.admin.hud:
+    description: Administrer l'intégration HUDEngine
     default: op
   noxoclaim.bypass:
     description: Ignore les protections NoxoClaim
