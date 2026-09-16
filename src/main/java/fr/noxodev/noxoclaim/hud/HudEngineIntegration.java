@@ -3,6 +3,8 @@ package fr.noxodev.noxoclaim.hud;
 import fr.noxodev.noxoclaim.NoxoClaim;
 import fr.noxodev.noxoclaim.models.Claim;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 
 import javax.imageio.ImageIO;
@@ -29,21 +31,25 @@ public final class HudEngineIntegration {
     public static final String HUD_KEY = "noxoclaim:minimap";
     private static final String HUD_ENGINE_PLUGIN = "HUDEngine";
     private static final String PROVIDER_CLASS = "io.github.nacvark.hudengine.api.HudEngineProvider";
-    private static final int MAP_SIZE = 13;
+
+    // Keep the existing HUD and turn it into a real terrain/claim minimap instead of only showing claim cells.
+    private static final int MAP_SIZE = 17;
     private static final int MAP_RADIUS = MAP_SIZE / 2;
-    private static final int CELL_SIZE = 10;
+    private static final int CELL_SIZE = 8;
+    private static final int TERRAIN_STATES = 8;
     private static final int MAP_PIXELS = MAP_SIZE * CELL_SIZE;
-    private static final int FRAME_WIDTH = MAP_PIXELS + 20;
-    private static final int HEADER_HEIGHT = 25;
-    private static final int FOOTER_HEIGHT = 22;
-    private static final int FRAME_HEIGHT = HEADER_HEIGHT + MAP_PIXELS + FOOTER_HEIGHT + 12;
-    private static final int MAP_X = 10;
-    private static final int MAP_Y = HEADER_HEIGHT + 6;
+    private static final int FRAME_WIDTH = MAP_PIXELS + 28;
+    private static final int HEADER_HEIGHT = 24;
+    private static final int FOOTER_HEIGHT = 24;
+    private static final int FRAME_HEIGHT = HEADER_HEIGHT + MAP_PIXELS + FOOTER_HEIGHT + 14;
+    private static final int MAP_X = 14;
+    private static final int MAP_Y = HEADER_HEIGHT + 7;
     private static final int MIN_REFRESH_TICKS = 5;
     private static final long DEFAULT_REFRESH_TICKS = 10L;
 
     private final NoxoClaim plugin;
     private final Map<UUID, HudState> lastStates = new HashMap<>();
+    private final Map<UUID, String[]> cachedMaps = new HashMap<>();
     private Object engine;
     private boolean ready;
     private int refreshTask = -1;
@@ -53,6 +59,7 @@ public final class HudEngineIntegration {
     public void start() {
         stopRefreshTask();
         lastStates.clear();
+        cachedMaps.clear();
         ready = false;
         engine = null;
         if (!plugin.getConfig().getBoolean("hudengine.enabled", true)) {
@@ -66,6 +73,7 @@ public final class HudEngineIntegration {
         stopRefreshTask();
         for (Player player : Bukkit.getOnlinePlayers()) hide(player);
         lastStates.clear();
+        cachedMaps.clear();
         ready = false;
         engine = null;
     }
@@ -94,7 +102,7 @@ public final class HudEngineIntegration {
                 return;
             }
             ready = true;
-            plugin.getLogger().info("HUDEngine : HUD NoxoClaim premium prêt (" + MAP_SIZE + "x" + MAP_SIZE + ").");
+            plugin.getLogger().info("HUDEngine : minimap NoxoClaim terrain prête (" + MAP_SIZE + "x" + MAP_SIZE + ").");
             for (Player player : Bukkit.getOnlinePlayers()) show(player);
             startRefreshTask();
         } catch (ClassNotFoundException exception) {
@@ -142,13 +150,47 @@ public final class HudEngineIntegration {
 
     private String cellState(Player player, int screenX, int screenZ) {
         if (player == null || !player.isOnline()) return "0";
+        String[] map = cachedMaps.get(player.getUniqueId());
+        if (map == null) return "0";
+        int index = (screenZ + MAP_RADIUS) * MAP_SIZE + (screenX + MAP_RADIUS);
+        return index >= 0 && index < map.length ? map[index] : "0";
+    }
+
+    private String[] buildMap(Player player) {
+        String[] map = new String[MAP_SIZE * MAP_SIZE];
         var location = player.getLocation();
-        int[] relative = rotateRelative(screenX, screenZ, location.getYaw());
-        int centerX = Math.floorDiv(location.getBlockX(), 16);
-        int centerZ = Math.floorDiv(location.getBlockZ(), 16);
-        Claim claim = plugin.claims().atChunk(player.getWorld().getName(), centerX + relative[0], centerZ + relative[1]);
-        if (claim == null) return "0";
-        return claim.getOwner().equals(player.getUniqueId()) ? "1" : "2";
+        World world = player.getWorld();
+        int centerChunkX = Math.floorDiv(location.getBlockX(), 16);
+        int centerChunkZ = Math.floorDiv(location.getBlockZ(), 16);
+
+        for (int screenZ = -MAP_RADIUS; screenZ <= MAP_RADIUS; screenZ++) {
+            for (int screenX = -MAP_RADIUS; screenX <= MAP_RADIUS; screenX++) {
+                int[] relative = rotateRelative(screenX, screenZ, location.getYaw());
+                int chunkX = centerChunkX + relative[0];
+                int chunkZ = centerChunkZ + relative[1];
+                int index = (screenZ + MAP_RADIUS) * MAP_SIZE + (screenX + MAP_RADIUS);
+
+                Claim claim = plugin.claims().atChunk(world.getName(), chunkX, chunkZ);
+                if (claim != null) {
+                    map[index] = claim.getOwner().equals(player.getUniqueId()) ? "6" : "7";
+                    continue;
+                }
+                map[index] = terrainState(world, chunkX, chunkZ);
+            }
+        }
+        return map;
+    }
+
+    private String terrainState(World world, int chunkX, int chunkZ) {
+        int blockX = chunkX * 16 + 8;
+        int blockZ = chunkZ * 16 + 8;
+        Material material = world.getHighestBlockAt(blockX, blockZ).getType();
+        if (material == Material.WATER || material == Material.KELP || material == Material.KELP_PLANT) return "1";
+        if (material == Material.SAND || material == Material.RED_SAND || material == Material.SANDSTONE) return "2";
+        if (material == Material.SNOW || material == Material.SNOW_BLOCK || material == Material.ICE || material == Material.PACKED_ICE) return "3";
+        if (material == Material.STONE || material == Material.DEEPSLATE || material == Material.COBBLESTONE) return "4";
+        if (material == Material.DIRT || material == Material.COARSE_DIRT || material == Material.PODZOL || material == Material.MUD) return "5";
+        return "0";
     }
 
     private int[] rotateRelative(int screenX, int screenZ, float yaw) {
@@ -165,11 +207,13 @@ public final class HudEngineIntegration {
         int chunkZ = Math.floorDiv(location.getBlockZ(), 16);
         int yawBucket = Math.floorMod(Math.round(location.getYaw() / 10f), 36);
         HudState state = new HudState(chunkX, chunkZ, yawBucket, plugin.claims().revision());
-        if (state.equals(lastStates.put(player.getUniqueId(), state))) return;
+        if (state.equals(lastStates.get(player.getUniqueId()))) return;
+        lastStates.put(player.getUniqueId(), state);
+        cachedMaps.put(player.getUniqueId(), buildMap(player));
         refresh(player);
     }
 
-    /** Generates the entire HUD theme automatically in HUDEngine's data folder. */
+    /** Generates the existing HUD theme and minimap assets automatically in HUDEngine's data folder. */
     private void ensureMinimapAssets(Path hudEngineData) throws IOException {
         Path images = hudEngineData.resolve("images");
         Path layouts = hudEngineData.resolve("layouts");
@@ -193,14 +237,21 @@ public final class HudEngineIntegration {
     }
 
     private void writeMapSprite(Path file) throws IOException {
-        BufferedImage image = new BufferedImage(CELL_SIZE * 3, CELL_SIZE, BufferedImage.TYPE_INT_ARGB);
+        BufferedImage image = new BufferedImage(CELL_SIZE * TERRAIN_STATES, CELL_SIZE, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = graphics(image);
         try {
-            Color[] fills = {new Color(17, 22, 28, 235), new Color(44, 190, 112, 245), new Color(220, 72, 84, 245)};
-            for (int state = 0; state < 3; state++) {
+            Color[] fills = {
+                    new Color(75, 125, 70, 245), new Color(55, 135, 205, 245),
+                    new Color(218, 190, 105, 245), new Color(235, 245, 250, 245),
+                    new Color(105, 105, 105, 245), new Color(125, 85, 55, 245),
+                    new Color(45, 195, 110, 250), new Color(220, 70, 85, 250)
+            };
+            for (int state = 0; state < TERRAIN_STATES; state++) {
                 int x = state * CELL_SIZE;
-                g.setColor(fills[state]); g.fillRect(x, 0, CELL_SIZE, CELL_SIZE);
-                g.setColor(new Color(255, 255, 255, 38)); g.drawRect(x, 0, CELL_SIZE - 1, CELL_SIZE - 1);
+                g.setColor(fills[state]);
+                g.fillRect(x, 0, CELL_SIZE, CELL_SIZE);
+                g.setColor(new Color(255, 255, 255, 28));
+                g.drawRect(x, 0, CELL_SIZE - 1, CELL_SIZE - 1);
             }
         } finally { g.dispose(); }
         ImageIO.write(image, "png", file.toFile());
@@ -211,10 +262,15 @@ public final class HudEngineIntegration {
         Graphics2D g = graphics(image);
         try {
             int mid = CELL_SIZE / 2;
-            g.setColor(new Color(0, 0, 0, 170)); g.fillOval(0, 0, CELL_SIZE - 1, CELL_SIZE - 1);
+            g.setColor(new Color(0, 0, 0, 180));
+            g.fillOval(0, 0, CELL_SIZE - 1, CELL_SIZE - 1);
             g.setColor(new Color(65, 170, 255));
-            int[] x = {mid, 1, mid, CELL_SIZE - 2}; int[] y = {1, CELL_SIZE - 2, mid + 1, CELL_SIZE - 2};
-            g.fillPolygon(x, y, 4); g.setColor(Color.WHITE); g.setStroke(new BasicStroke(1f)); g.drawPolygon(x, y, 4);
+            int[] x = {mid, 1, mid, CELL_SIZE - 2};
+            int[] y = {1, CELL_SIZE - 2, mid + 1, CELL_SIZE - 2};
+            g.fillPolygon(x, y, 4);
+            g.setColor(Color.WHITE);
+            g.setStroke(new BasicStroke(1f));
+            g.drawPolygon(x, y, 4);
         } finally { g.dispose(); }
         ImageIO.write(image, "png", file.toFile());
     }
@@ -224,42 +280,62 @@ public final class HudEngineIntegration {
         Graphics2D g = graphics(image);
         try {
             RoundRectangle2D panel = new RoundRectangle2D.Float(1, 1, FRAME_WIDTH - 2, FRAME_HEIGHT - 2, 14, 14);
-            g.setColor(new Color(7, 10, 15, 232)); g.fill(panel); g.setColor(new Color(82, 174, 255, 170)); g.setStroke(new BasicStroke(1.4f)); g.draw(panel);
+            g.setColor(new Color(7, 10, 15, 232)); g.fill(panel);
+            g.setColor(new Color(82, 174, 255, 170)); g.setStroke(new BasicStroke(1.4f)); g.draw(panel);
             g.setColor(new Color(70, 165, 255, 35)); g.fillRoundRect(4, 4, FRAME_WIDTH - 8, HEADER_HEIGHT - 1, 10, 10);
-            g.setFont(new Font("SansSerif", Font.BOLD, 11)); g.setColor(new Color(235, 244, 255)); g.drawString("NOXOCLAIM", 9, 15);
-            g.setFont(new Font("SansSerif", Font.PLAIN, 7)); g.setColor(new Color(145, 165, 185)); g.drawString("TERRITORY", 9, 22);
-            g.setFont(new Font("SansSerif", Font.BOLD, 7)); String[] directions = {"N", "E", "S", "W"};
+            g.setFont(new Font("SansSerif", Font.BOLD, 10)); g.setColor(new Color(235, 244, 255)); g.drawString("NOXOCLAIM", 10, 15);
+            g.setFont(new Font("SansSerif", Font.PLAIN, 7)); g.setColor(new Color(145, 165, 185)); g.drawString("MINIMAP", 10, 21);
+            String[] directions = {"N", "E", "S", "W"};
             int[] dx = {FRAME_WIDTH / 2 - 2, FRAME_WIDTH - 12, FRAME_WIDTH / 2 - 2, 5};
             int[] dy = {HEADER_HEIGHT + 4, MAP_Y + MAP_PIXELS / 2 + 3, MAP_Y + MAP_PIXELS + 8, MAP_Y + MAP_PIXELS / 2 + 3};
-            for (int i = 0; i < 4; i++) { g.setColor(i == 0 ? new Color(95, 190, 255) : new Color(150, 165, 180)); g.drawString(directions[i], dx[i], dy[i]); }
-            g.setColor(new Color(8, 12, 18, 230)); g.fillRoundRect(MAP_X, MAP_Y, MAP_PIXELS, MAP_PIXELS, 5, 5); g.setColor(new Color(255, 255, 255, 22)); g.drawRoundRect(MAP_X, MAP_Y, MAP_PIXELS, MAP_PIXELS, 5, 5);
+            for (int i = 0; i < 4; i++) {
+                g.setColor(i == 0 ? new Color(95, 190, 255) : new Color(150, 165, 180));
+                g.drawString(directions[i], dx[i], dy[i]);
+            }
+            g.setColor(new Color(8, 12, 18, 230)); g.fillRoundRect(MAP_X, MAP_Y, MAP_PIXELS, MAP_PIXELS, 5, 5);
+            g.setColor(new Color(255, 255, 255, 22)); g.drawRoundRect(MAP_X, MAP_Y, MAP_PIXELS, MAP_PIXELS, 5, 5);
             int footerY = MAP_Y + MAP_PIXELS + 11;
-            drawLegend(g, 9, footerY, new Color(44, 190, 112), "OWN"); drawLegend(g, 51, footerY, new Color(220, 72, 84), "OTHER"); drawLegend(g, 104, footerY, new Color(65, 170, 255), "YOU");
+            drawLegend(g, 10, footerY, new Color(75, 125, 70), "LAND");
+            drawLegend(g, 55, footerY, new Color(55, 135, 205), "WATER");
+            drawLegend(g, 103, footerY, new Color(45, 195, 110), "OWN");
+            drawLegend(g, 142, footerY, new Color(220, 70, 85), "OTHER");
         } finally { g.dispose(); }
         ImageIO.write(image, "png", file.toFile());
     }
 
     private void drawLegend(Graphics2D g, int x, int y, Color color, String label) {
-        g.setColor(color); g.fillRoundRect(x, y - 6, 6, 6, 2, 2); g.setFont(new Font("SansSerif", Font.BOLD, 6)); g.setColor(new Color(165, 180, 195)); g.drawString(label, x + 9, y - 1);
+        g.setColor(color); g.fillRoundRect(x, y - 6, 6, 6, 2, 2);
+        g.setFont(new Font("SansSerif", Font.BOLD, 6)); g.setColor(new Color(165, 180, 195));
+        g.drawString(label, x + 9, y - 1);
     }
 
     private void writeImageDefinitions(Path file) throws IOException {
         StringBuilder out = new StringBuilder();
         out.append("noxoclaim-frame:\n  file: noxoclaim-frame.png\n  setting:\n    scale: 1\n\n");
         out.append("noxoclaim-player:\n  file: noxoclaim-player.png\n  setting:\n    scale: 1\n\n");
-        for (int z = -MAP_RADIUS; z <= MAP_RADIUS; z++) for (int x = -MAP_RADIUS; x <= MAP_RADIUS; x++) {
-            out.append(imageKey(x, z)).append(":\n  file: noxoclaim-cell.png\n  type: listener\n  split: 3\n  split-type: left\n  setting:\n    scale: 1\n    listener:\n      value: \"").append(cellKey(x, z)).append("\"\n      max: \"2\"\n\n");
+        for (int z = -MAP_RADIUS; z <= MAP_RADIUS; z++) {
+            for (int x = -MAP_RADIUS; x <= MAP_RADIUS; x++) {
+                out.append(imageKey(x, z)).append(":\n  file: noxoclaim-cell.png\n  type: listener\n  split: ").append(TERRAIN_STATES)
+                        .append("\n  split-type: left\n  setting:\n    scale: 1\n    listener:\n      value: \"").append(cellKey(x, z)
+                        .append("\"\n      max: \"").append(TERRAIN_STATES - 1).append("\"\n\n");
+            }
         }
         Files.writeString(file, out.toString());
     }
 
     private void writeLayout(Path file) throws IOException {
-        StringBuilder out = new StringBuilder("noxoclaim-minimap:\n  x: -170\n  y: 4\n  images:\n    1:\n      name: noxoclaim-frame\n      x: 0\n      y: 0\n      layer: 0\n");
+        StringBuilder out = new StringBuilder("noxoclaim-minimap:\n  x: -190\n  y: 4\n  images:\n    1:\n      name: noxoclaim-frame\n      x: 0\n      y: 0\n      layer: 0\n");
         int imageId = 10;
-        for (int z = -MAP_RADIUS; z <= MAP_RADIUS; z++) for (int x = -MAP_RADIUS; x <= MAP_RADIUS; x++) {
-            out.append("    ").append(imageId++).append(":\n      name: ").append(imageKey(x, z)).append("\n      x: ").append(MAP_X + (x + MAP_RADIUS) * CELL_SIZE).append("\n      y: ").append(MAP_Y + (z + MAP_RADIUS) * CELL_SIZE).append("\n      layer: 1\n");
+        for (int z = -MAP_RADIUS; z <= MAP_RADIUS; z++) {
+            for (int x = -MAP_RADIUS; x <= MAP_RADIUS; x++) {
+                out.append("    ").append(imageId++).append(":\n      name: ").append(imageKey(x, z))
+                        .append("\n      x: ").append(MAP_X + (x + MAP_RADIUS) * CELL_SIZE)
+                        .append("\n      y: ").append(MAP_Y + (z + MAP_RADIUS) * CELL_SIZE)
+                        .append("\n      layer: 1\n");
+            }
         }
-        out.append("    200:\n      name: noxoclaim-player\n      x: ").append(MAP_X + MAP_RADIUS * CELL_SIZE).append("\n      y: ").append(MAP_Y + MAP_RADIUS * CELL_SIZE).append("\n      layer: 3\n");
+        out.append("    200:\n      name: noxoclaim-player\n      x: ").append(MAP_X + MAP_RADIUS * CELL_SIZE)
+                .append("\n      y: ").append(MAP_Y + MAP_RADIUS * CELL_SIZE).append("\n      layer: 3\n");
         Files.writeString(file, out.toString());
     }
 
@@ -281,7 +357,8 @@ public final class HudEngineIntegration {
             Object controller = invokePublicApi(engine, "player", Player.class, player);
             if (controller == null) return;
             if ("refresh".equals(action)) { invokePublicApi(controller, "refresh"); return; }
-            invokePublicApi(controller, action, String.class, HUD_KEY); invokePublicApiQuietly(controller, "refresh");
+            invokePublicApi(controller, action, String.class, HUD_KEY);
+            invokePublicApiQuietly(controller, "refresh");
         } catch (Throwable throwable) { plugin.getLogger().fine("HUDEngine " + action + " impossible : " + rootMessage(throwable)); }
     }
 
