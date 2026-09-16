@@ -44,7 +44,11 @@ public final class NoxoClaim extends JavaPlugin {
 
         HudEngineInstaller.ensureInstalled(this);
         hudEngine = new HudEngineIntegration(this);
-        hudEngine.start();
+        if (getConfig().getBoolean("hudengine.minimap.enabled", true)) {
+            hudEngine.start();
+        } else {
+            getLogger().info("HUDEngine : minimap désactivée par la configuration.");
+        }
         getServer().getPluginManager().registerEvents(new HudEngineListener(this), this);
 
         adminGui = new ClaimAdminGui(this);
