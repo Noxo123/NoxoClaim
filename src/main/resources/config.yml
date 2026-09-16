@@ -71,6 +71,13 @@ api:
   # Set a long random token before enabling the API.
   token: ""
   rate-limit-per-minute: 120
+  webhooks:
+    enabled: false
+    url: ""
+    # Secret sent as X-NoxoClaim-Webhook. Leave empty to disable signature header.
+    secret: ""
+    # HTTP webhooks are disabled by default. HTTPS is recommended.
+    allow-http: false
 
 storage:
   file: claims.yml
