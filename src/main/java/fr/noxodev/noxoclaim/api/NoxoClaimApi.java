@@ -18,7 +18,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collection;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -211,10 +210,52 @@ public final class NoxoClaimApi {
         String url = plugin.getConfig().getString("api.webhooks.url", "");
         if (url == null || url.isBlank() || !(url.startsWith("https://") || (url.startsWith("http://") && plugin.getConfig().getBoolean("api.webhooks.allow-http", false)))) return;
         String secret = plugin.getConfig().getString("api.webhooks.secret", "");
+        if (plugin.getConfig().getBoolean("api.webhooks.discord.enabled", false)) {
+            sendDiscordWebhook(event, url);
+            return;
+        }
+        sendHttpWebhook(event, url, secret);
+    }
+
+    private void sendHttpWebhook(Activity event, String url, String secret) {
         String body = event.json();
         HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(5)).header("Content-Type", "application/json").POST(HttpRequest.BodyPublishers.ofString(body));
         if (!secret.isBlank()) builder.header("X-NoxoClaim-Webhook", secret);
         httpClient.sendAsync(builder.build(), HttpResponse.BodyHandlers.discarding()).exceptionally(ex -> null);
+    }
+
+    private void sendDiscordWebhook(Activity event, String url) {
+        String username = plugin.getConfig().getString("api.webhooks.discord.username", "NoxoClaim");
+        String avatar = plugin.getConfig().getString("api.webhooks.discord.avatar", "");
+        String title = "NoxoClaim • Activité des claims";
+        String description = "Une modification des claims a été détectée sur le serveur.";
+        String color = plugin.getConfig().getString("api.webhooks.discord.color", "5865F2");
+        if (color == null || !color.matches("[0-9A-Fa-f]{6}")) color = "5865F2";
+        String payload = "{\"username\":\"" + esc(username) + "\""
+                + (avatar == null || avatar.isBlank() ? "" : ",\"avatar_url\":\"" + esc(avatar) + "\"")
+                + ",\"allowed_mentions\":{\"parse\":[]}"
+                + ",\"embeds\":[{\"title\":\"" + esc(title) + "\",\"description\":\"" + esc(description)
+                + "\",\"color\":" + Integer.parseInt(color, 16)
+                + ",\"fields\":[{\"name\":\"Événement\",\"value\":\"`" + esc(event.event()) + "`\",\"inline\":true},"
+                + "{\"name\":\"Révision\",\"value\":\"`" + event.revision() + "`\",\"inline\":true}],"
+                + "\"timestamp\":\"" + java.time.Instant.ofEpochMilli(event.timestamp()) + "\",\"footer\":{\"text\":\"NoxoClaim API\"}}]}";
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(5))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(payload))
+                .build();
+        httpClient.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+                .thenAccept(response -> {
+                    if (response.statusCode() == 429) {
+                        plugin.getLogger().warning("Discord webhook NoxoClaim limité par Discord (429).");
+                    } else if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        plugin.getLogger().warning("Discord webhook NoxoClaim refusé (HTTP " + response.statusCode() + ").");
+                    }
+                })
+                .exceptionally(ex -> {
+                    plugin.getLogger().warning("Échec du webhook Discord NoxoClaim: " + ex.getClass().getSimpleName());
+                    return null;
+                });
     }
 
     private boolean authorized(HttpExchange e) throws IOException {
