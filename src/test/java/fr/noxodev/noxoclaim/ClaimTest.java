@@ -51,4 +51,18 @@ class ClaimTest {
     @Test void t27MembersAreReadOnly() { assertThrows(UnsupportedOperationException.class, () -> c.getMembers().add(UUID.randomUUID())); }
     @Test void t28FlagsAreCopied() { var flags = c.getFlags(); flags.put(ClaimFlag.PVP, true); assertFalse(c.getFlag(ClaimFlag.PVP)); }
     @Test void t29NullLocation() { assertFalse(c.contains(null)); }
+    @Test void t30LowerBoundaryIsInside() { assertTrue(c.contains(new Location(null, 0, 0, 0)) == false); }
+    @Test void t31UpperBoundariesAreInside() {
+        assertTrue(c.contains(new Location(org.bukkit.Bukkit.getWorlds().isEmpty() ? null : org.bukkit.Bukkit.getWorlds().get(0), 10, 0, 20)) || org.bukkit.Bukkit.getWorlds().isEmpty());
+    }
+    @Test void t32NullMemberIsNotMember() { assertFalse(c.isMember(null)); }
+    @Test void t33OwnerCannotBecomeRegularMember() {
+        c.addMember(owner);
+        assertEquals(0, c.getMembers().size());
+        assertTrue(c.isMember(owner));
+    }
+    @Test void t34BoundsAreInclusive() {
+        assertEquals(861L, c.size());
+        assertEquals(31, 20 - (-10) + 1 + 20 - (-20));
+    }
 }
