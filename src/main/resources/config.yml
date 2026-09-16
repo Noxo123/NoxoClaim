@@ -63,7 +63,7 @@ hudengine:
     enabled: true
     hud-key: noxoclaim:minimap
     radius: 4
-    refresh-ticks: 10
+    refresh-ticks: 20
 
 storage:
   file: claims.yml
