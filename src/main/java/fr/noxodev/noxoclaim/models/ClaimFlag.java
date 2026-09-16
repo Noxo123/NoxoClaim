@@ -7,5 +7,6 @@ public enum ClaimFlag {
     FIRE,
     MOB_GRIEFING,
     FLUIDS,
+    PISTONS,
     ENTRY
 }
