@@ -1,5 +1,6 @@
 package fr.noxodev.noxoclaim;
 
+import fr.noxodev.noxoclaim.api.NoxoClaimApi;
 import fr.noxodev.noxoclaim.commands.*;
 import fr.noxodev.noxoclaim.gui.ClaimAdminGui;
 import fr.noxodev.noxoclaim.gui.ClaimGui;
@@ -28,6 +29,7 @@ public final class NoxoClaim extends JavaPlugin {
     private ClaimMapIntegration mapIntegration;
     private UpdateChecker updateChecker;
     private HudEngineIntegration hudEngine;
+    private NoxoClaimApi api;
     private ClaimAdminGui adminGui;
     private boolean plugManX;
 
@@ -44,12 +46,12 @@ public final class NoxoClaim extends JavaPlugin {
 
         HudEngineInstaller.ensureInstalled(this);
         hudEngine = new HudEngineIntegration(this);
-        if (getConfig().getBoolean("hudengine.minimap.enabled", true)) {
-            hudEngine.start();
-        } else {
-            getLogger().info("HUDEngine : minimap désactivée par la configuration.");
-        }
+        if (getConfig().getBoolean("hudengine.minimap.enabled", true)) hudEngine.start();
+        else getLogger().info("HUDEngine : minimap désactivée par la configuration.");
         getServer().getPluginManager().registerEvents(new HudEngineListener(this), this);
+
+        api = new NoxoClaimApi(this);
+        api.start();
 
         adminGui = new ClaimAdminGui(this);
         getServer().getPluginManager().registerEvents(adminGui, this);
@@ -71,7 +73,7 @@ public final class NoxoClaim extends JavaPlugin {
         }
         startUpdateChecker();
         getLogger().info("NoxoClaim " + getDescription().getVersion() + " activé.");
-        getLogger().info("Modules: protection=OK, map=OK, economy=" + (economy != null ? "OK" : "indisponible") + ", PlugManX=" + (plugManX ? "OK" : "absent") + ", HUDEngine=" + (getServer().getPluginManager().getPlugin("HUDEngine") != null ? "OK" : "en attente") + ".");
+        getLogger().info("Modules: protection=OK, map=OK, economy=" + (economy != null ? "OK" : "indisponible") + ", PlugManX=" + (plugManX ? "OK" : "absent") + ", API=" + (api.isRunning() ? "OK" : "désactivée") + ", HUDEngine=" + (getServer().getPluginManager().getPlugin("HUDEngine") != null ? "OK" : "en attente") + ".");
     }
 
     private void detectPlugManX() {
@@ -96,6 +98,7 @@ public final class NoxoClaim extends JavaPlugin {
     public UpdateInfo updateInfo() { return updateInfo; }
     public UpdateChecker updateChecker() { return updateChecker; }
     public HudEngineIntegration hudEngine() { return hudEngine; }
+    public NoxoClaimApi api() { return api; }
     public ClaimAdminGui adminGui() { return adminGui; }
     private void register(String name, ClaimCommand executor) { if (getCommand(name) != null) { getCommand(name).setExecutor(executor); getCommand(name).setTabCompleter(executor); } }
     private void setupEconomy() {
@@ -114,6 +117,7 @@ public final class NoxoClaim extends JavaPlugin {
     public double chunkPrice() { return getConfig().getDouble("economy.cost-per-chunk", 500.0); }
     public ClaimMapIntegration mapIntegration() { return mapIntegration; }
     @Override public void onDisable() {
+        if (api != null) api.stop();
         if (hudEngine != null) hudEngine.stop();
         if (claims != null) claims.close();
         getLogger().info("NoxoClaim désactivé proprement.");
