@@ -150,30 +150,20 @@ public final class ClaimManager {
     }
 
     private record ChunkKey(String world, int x, int z) {}
-
-    private record ClaimSnapshot(UUID id, UUID owner, String name, String world, int minX, int minZ, int maxX, int maxZ,
-                                 List<UUID> members, EnumMap<ClaimFlag, Boolean> flags, HomeSnapshot home) {}
-
+    private record ClaimSnapshot(UUID id, UUID owner, String name, String world, int minX, int minZ, int maxX, int maxZ, List<UUID> members, EnumMap<ClaimFlag, Boolean> flags, HomeSnapshot home) {}
     private record HomeSnapshot(String world, double x, double y, double z, float yaw, float pitch) {}
 
     private List<ClaimSnapshot> snapshotClaims() {
         List<ClaimSnapshot> snapshot = new ArrayList<>(claims.size());
         for (Claim c : claims.values()) {
             Location h = c.getHome();
-            HomeSnapshot home = h == null ? null : new HomeSnapshot(
-                    h.getWorld() == null ? c.getWorld() : h.getWorld().getName(),
-                    h.getX(), h.getY(), h.getZ(), h.getYaw(), h.getPitch());
-            snapshot.add(new ClaimSnapshot(c.getId(), c.getOwner(), c.getName(), c.getWorld(),
-                    c.getMinX(), c.getMinZ(), c.getMaxX(), c.getMaxZ(),
-                    List.copyOf(c.getMembers()), c.getFlags(), home));
+            HomeSnapshot home = h == null ? null : new HomeSnapshot(h.getWorld() == null ? c.getWorld() : h.getWorld().getName(), h.getX(), h.getY(), h.getZ(), h.getYaw(), h.getPitch());
+            snapshot.add(new ClaimSnapshot(c.getId(), c.getOwner(), c.getName(), c.getWorld(), c.getMinX(), c.getMinZ(), c.getMaxX(), c.getMaxZ(), List.copyOf(c.getMembers()), c.getFlags(), home));
         }
         return List.copyOf(snapshot);
     }
 
-    private void onClaimChanged() {
-        if (closed) return;
-        markChanged();
-    }
+    private void onClaimChanged() { if (!closed) markChanged(); }
 
     private void markChanged() {
         revision++;
@@ -193,8 +183,13 @@ public final class ClaimManager {
                 plugin.getLogger().severe("Impossible de sauvegarder claims.yml en arrière-plan: " + ex.getMessage());
             } finally {
                 synchronized (ClaimManager.this) {
-                    scheduledSave = null;
-                    if (!closed && revision > targetRevision) scheduleSave();
+                    if (closed) {
+                        scheduledSave = null;
+                    } else if (revision > targetRevision) {
+                        scheduleSave();
+                    } else {
+                        scheduledSave = null;
+                    }
                 }
             }
         }, SAVE_DEBOUNCE_TICKS);
@@ -248,7 +243,6 @@ public final class ClaimManager {
                     y.set(p + ".home.yaw", h.yaw()); y.set(p + ".home.pitch", h.pitch());
                 }
             }
-
             File temp = new File(file.getParentFile(), file.getName() + ".tmp");
             try {
                 y.save(temp);
@@ -277,13 +271,9 @@ public final class ClaimManager {
                 String world = y.getString("claims." + id + ".world");
                 if (ownerValue == null || world == null || world.isBlank()) throw new IllegalArgumentException("missing owner/world");
                 String p = "claims." + id;
-                Claim c = new Claim(claimId, UUID.fromString(ownerValue), world,
-                        y.getInt(p + ".minX"), y.getInt(p + ".minZ"), y.getInt(p + ".maxX"), y.getInt(p + ".maxZ"),
-                        y.getString(p + ".name", "claim-" + id.substring(0, 8)));
+                Claim c = new Claim(claimId, UUID.fromString(ownerValue), world, y.getInt(p + ".minX"), y.getInt(p + ".minZ"), y.getInt(p + ".maxX"), y.getInt(p + ".maxZ"), y.getString(p + ".name", "claim-" + id.substring(0, 8)));
                 for (String member : y.getStringList(p + ".members")) {
-                    try { c.addMember(UUID.fromString(member)); } catch (IllegalArgumentException ignored) {
-                        Bukkit.getLogger().warning("[NoxoClaim] UUID membre invalide dans le claim " + id + ": " + member);
-                    }
+                    try { c.addMember(UUID.fromString(member)); } catch (IllegalArgumentException ignored) { Bukkit.getLogger().warning("[NoxoClaim] UUID membre invalide dans le claim " + id + ": " + member); }
                 }
                 for (ClaimFlag flag : ClaimFlag.values()) {
                     String flagPath = p + ".flags." + flag.name().toLowerCase(Locale.ROOT);
@@ -292,8 +282,7 @@ public final class ClaimManager {
                 }
                 if (y.contains(p + ".home.x")) {
                     World w = Bukkit.getWorld(y.getString(p + ".home.world", c.getWorld()));
-                    if (w != null) c.setHome(new Location(w, y.getDouble(p + ".home.x"), y.getDouble(p + ".home.y"), y.getDouble(p + ".home.z"),
-                            (float) y.getDouble(p + ".home.yaw"), (float) y.getDouble(p + ".home.pitch")));
+                    if (w != null) c.setHome(new Location(w, y.getDouble(p + ".home.x"), y.getDouble(p + ".home.y"), y.getDouble(p + ".home.z"), (float) y.getDouble(p + ".home.yaw"), (float) y.getDouble(p + ".home.pitch")));
                 }
                 validateClaim(c);
                 claims.put(c.getId(), c);
@@ -303,7 +292,5 @@ public final class ClaimManager {
         }
     }
 
-    private void ensureOpen() {
-        if (closed) throw new IllegalStateException("ClaimManager is closed");
-    }
+    private void ensureOpen() { if (closed) throw new IllegalStateException("ClaimManager is closed"); }
 }
