@@ -80,7 +80,7 @@ public final class ClaimManager {
         save();
     }
 
-    /** Rebuilds indexes in temporary maps and publishes them only if every claim is valid. */
+    /** Rebuilds indexes in temporary maps and publishes them only after validation. */
     public void rebuildIndexes() {
         Map<ChunkKey, Claim> newChunkIndex = new HashMap<>();
         Map<UUID, Set<UUID>> newOwnerIndex = new HashMap<>();
@@ -110,17 +110,19 @@ public final class ClaimManager {
         if (claim.size() <= 0 || claim.chunkCount() <= 0) throw new IllegalArgumentException("Invalid claim size");
     }
 
+    /** Checks every target chunk before mutating either index, so a failed insertion leaves no partial state. */
     private void index(Claim c, Map<ChunkKey, Claim> targetChunks, Map<UUID, Set<UUID>> targetOwners) {
-        targetOwners.computeIfAbsent(c.getOwner(), k -> new HashSet<>()).add(c.getId());
         int minX = Math.floorDiv(c.getMinX(), 16), maxX = Math.floorDiv(c.getMaxX(), 16);
         int minZ = Math.floorDiv(c.getMinZ(), 16), maxZ = Math.floorDiv(c.getMaxZ(), 16);
         for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
             ChunkKey key = new ChunkKey(c.getWorld(), x, z);
-            Claim previous = targetChunks.putIfAbsent(key, c);
+            Claim previous = targetChunks.get(key);
             if (previous != null && !previous.getId().equals(c.getId())) {
                 throw new IllegalStateException("Overlapping claims detected while indexing: " + previous.getId() + " / " + c.getId());
             }
         }
+        targetOwners.computeIfAbsent(c.getOwner(), k -> new HashSet<>()).add(c.getId());
+        for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) targetChunks.put(new ChunkKey(c.getWorld(), x, z), c);
     }
 
     private void unindex(Claim c, Map<ChunkKey, Claim> targetChunks, Map<UUID, Set<UUID>> targetOwners) {
