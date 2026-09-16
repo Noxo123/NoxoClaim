@@ -27,8 +27,6 @@ dependencies {
         exclude(group = "org.bukkit", module = "bukkit")
     }
 
-    // HUDEngine is installed as a Paper plugin by NoxoClaim when enabled.
-    // The API stays compile-only so we never duplicate HUDEngine classes in NoxoClaim.jar.
     compileOnly("io.github.nacvark:hudengine-api:1.0.0")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
@@ -42,6 +40,7 @@ java {
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
     options.release.set(25)
+    options.compilerArgs.add("--add-modules=jdk.httpserver")
 }
 
 tasks.processResources {
