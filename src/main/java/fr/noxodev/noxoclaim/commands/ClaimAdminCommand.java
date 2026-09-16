@@ -16,7 +16,8 @@ import java.util.UUID;
 
 public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
     private static final List<String> SUBCOMMANDS = List.of("dashboard", "list", "delete", "deleteall", "save", "reload", "status", "info", "update", "updates", "check", "debug", "hud");
-    private static final List<String> HUD_SUBCOMMANDS = List.of("status", "install", "reinstall", "enable", "disable", "refresh");
+    private static final List<String> HUD_SUBCOMMANDS = List.of("status", "install", "reinstall", "enable", "disable", "refresh", "minimap");
+    private static final List<String> MINIMAP_SUBCOMMANDS = List.of("status", "enable", "disable");
     private final NoxoClaim plugin;
     private ClaimAdminGui dashboard;
 
@@ -54,6 +55,7 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage("§7Vault provider: " + (plugin.economy() == null ? "§cAbsent" : "§a" + plugin.economy().getName()));
                 sender.sendMessage("§7PlugManX: " + (plugin.isPlugManXAvailable() ? "§aDétecté" : "§7Absent"));
                 sender.sendMessage("§7HUDEngine: " + hudState());
+                sender.sendMessage("§7Minimap HUDEngine: " + minimapState());
                 sender.sendMessage("§7Update checker: " + (plugin.updateChecker() == null ? "§cAbsent" : "§aActif"));
                 sender.sendMessage("§7Update state: " + updateState());
             }
@@ -86,13 +88,29 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
     private void hud(CommandSender sender, String[] args) {
         if (!sender.hasPermission("noxoclaim.admin.hud")) { plugin.messages().send(sender, "no-permission"); return; }
         if (args.length == 1 || args[1].equalsIgnoreCase("status")) { hudStatus(sender); return; }
+        if (args[1].equalsIgnoreCase("minimap")) { minimap(sender, args); return; }
         switch (args[1].toLowerCase(Locale.ROOT)) {
             case "install", "reinstall" -> { fr.noxodev.noxoclaim.hud.HudEngineInstaller.ensureInstalled(plugin); sender.sendMessage("§a[NoxoClaim] Installation HUDEngine demandée. Redémarre si nécessaire."); }
-            case "enable" -> { plugin.getConfig().set("hudengine.enabled", true); plugin.saveConfig(); sender.sendMessage("§a[NoxoClaim] Intégration HUDEngine activée."); }
-            case "disable" -> { plugin.getConfig().set("hudengine.enabled", false); plugin.saveConfig(); if (plugin.hudEngine() != null && sender instanceof Player player) plugin.hudEngine().hide(player); sender.sendMessage("§e[NoxoClaim] Intégration HUDEngine désactivée."); }
+            case "enable" -> { plugin.getConfig().set("hudengine.enabled", true); plugin.saveConfig(); if (plugin.hudEngine() != null) plugin.hudEngine().start(); sender.sendMessage("§a[NoxoClaim] Intégration HUDEngine activée."); }
+            case "disable" -> { plugin.getConfig().set("hudengine.enabled", false); plugin.saveConfig(); if (plugin.hudEngine() != null) plugin.hudEngine().stop(); sender.sendMessage("§e[NoxoClaim] Intégration HUDEngine désactivée."); }
             case "refresh" -> refreshHud(sender);
             default -> hudHelp(sender);
         }
+    }
+
+    private void minimap(CommandSender sender, String[] args) {
+        if (args.length == 2 || args[2].equalsIgnoreCase("status")) { sender.sendMessage("§b[NoxoClaim] Minimap HUDEngine : " + minimapState()); return; }
+        boolean enabled;
+        if (args[2].equalsIgnoreCase("enable") || args[2].equalsIgnoreCase("on")) enabled = true;
+        else if (args[2].equalsIgnoreCase("disable") || args[2].equalsIgnoreCase("off")) enabled = false;
+        else { sender.sendMessage("§cUsage: /claimadmin hud minimap <status|enable|disable>"); return; }
+        plugin.getConfig().set("hudengine.minimap.enabled", enabled);
+        plugin.saveConfig();
+        if (plugin.hudEngine() != null) {
+            if (enabled) plugin.hudEngine().start();
+            else plugin.hudEngine().stop();
+        }
+        sender.sendMessage(enabled ? "§a[NoxoClaim] Minimap HUDEngine activée et sauvegardée." : "§e[NoxoClaim] Minimap HUDEngine désactivée et sauvegardée.");
     }
 
     private void refreshHud(CommandSender sender) {
@@ -106,11 +124,13 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§b§lNoxoClaim — HUDEngine");
         sender.sendMessage("§7Plugin: " + (present ? "§aInstallé" : "§cAbsent"));
         sender.sendMessage("§7Intégration: " + (plugin.getConfig().getBoolean("hudengine.enabled", true) ? "§aActivée" : "§cDésactivée"));
+        sender.sendMessage("§7Minimap: " + minimapState());
         sender.sendMessage("§7API: " + (ready ? "§aDisponible" : "§eNon disponible"));
     }
 
+    private String minimapState() { return plugin.getConfig().getBoolean("hudengine.minimap.enabled", true) ? "§aActivée" : "§cDésactivée"; }
     private String hudState() { return plugin.hudEngine() != null && plugin.hudEngine().isReady() ? "§aActif" : "§eNon disponible"; }
-    private void hudHelp(CommandSender sender) { sender.sendMessage("§7/claimadmin hud [status|install|reinstall|enable|disable|refresh]"); }
+    private void hudHelp(CommandSender sender) { sender.sendMessage("§7/claimadmin hud [status|install|reinstall|enable|disable|refresh|minimap]"); sender.sendMessage("§7/claimadmin hud minimap [status|enable|disable]"); }
     private String updateState() { var update = plugin.updateInfo(); if (update == null) return "§eNon vérifié"; return update.available() ? "§eDisponible (§f" + update.latestVersion() + "§e)" : "§aÀ jour"; }
 
     private void sendStatus(CommandSender sender) {
@@ -121,6 +141,7 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§7Vault: " + (plugin.economy() != null ? "§aOK (" + plugin.economy().getName() + ")" : "§cAucun provider"));
         sender.sendMessage("§7PlugManX: " + (plugin.isPlugManXAvailable() ? "§aDétecté" : "§7Absent"));
         sender.sendMessage("§7HUDEngine: " + hudState());
+        sender.sendMessage("§7Minimap HUDEngine: " + minimapState());
         sender.sendMessage("§7Claims: §f" + plugin.claims().all().size());
         sender.sendMessage("§7Update: " + updateState());
     }
@@ -135,13 +156,15 @@ public final class ClaimAdminCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§7/claimadmin reload");
         sender.sendMessage("§7/claimadmin status");
         sender.sendMessage("§7/claimadmin debug");
-        sender.sendMessage("§7/claimadmin hud [status|install|reinstall|enable|disable|refresh]");
+        sender.sendMessage("§7/claimadmin hud [status|install|reinstall|enable|disable|refresh|minimap]");
+        sender.sendMessage("§7/claimadmin hud minimap [status|enable|disable]");
         sender.sendMessage("§7/claimadmin update [commit]");
     }
 
     @Override public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) { String input = args[0].toLowerCase(Locale.ROOT); return SUBCOMMANDS.stream().filter(value -> value.startsWith(input)).toList(); }
         if (args.length == 2 && args[0].equalsIgnoreCase("hud")) { String input = args[1].toLowerCase(Locale.ROOT); return HUD_SUBCOMMANDS.stream().filter(value -> value.startsWith(input)).toList(); }
+        if (args.length == 3 && args[0].equalsIgnoreCase("hud") && args[1].equalsIgnoreCase("minimap")) { String input = args[2].toLowerCase(Locale.ROOT); return MINIMAP_SUBCOMMANDS.stream().filter(value -> value.startsWith(input)).toList(); }
         return List.of();
     }
 }
