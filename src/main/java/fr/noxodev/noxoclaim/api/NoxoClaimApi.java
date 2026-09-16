@@ -21,7 +21,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -207,10 +206,13 @@ public final class NoxoClaimApi {
 
     private void webhook(Activity event) {
         if (!plugin.getConfig().getBoolean("api.webhooks.enabled", false)) return;
-        String url = plugin.getConfig().getString("api.webhooks.url", "");
+        boolean discordEnabled = plugin.getConfig().getBoolean("api.webhooks.discord.enabled", false);
+        String url = discordEnabled
+                ? plugin.getConfig().getString("api.webhooks.discord.url", "")
+                : plugin.getConfig().getString("api.webhooks.url", "");
         if (url == null || url.isBlank() || !(url.startsWith("https://") || (url.startsWith("http://") && plugin.getConfig().getBoolean("api.webhooks.allow-http", false)))) return;
         String secret = plugin.getConfig().getString("api.webhooks.secret", "");
-        if (plugin.getConfig().getBoolean("api.webhooks.discord.enabled", false)) {
+        if (discordEnabled) {
             sendDiscordWebhook(event, url);
             return;
         }
