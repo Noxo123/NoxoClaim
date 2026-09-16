@@ -55,7 +55,6 @@ map:
   particles:
     type: END_ROD
 
-# Server-side HUD. No client mod is required; players only receive the generated resource pack.
 hudengine:
   enabled: true
   auto-install: true
@@ -64,6 +63,14 @@ hudengine:
     hud-key: noxoclaim:minimap
     radius: 4
     refresh-ticks: 20
+
+api:
+  enabled: false
+  host: 127.0.0.1
+  port: 8765
+  # Set a long random token before enabling the API.
+  token: ""
+  rate-limit-per-minute: 120
 
 storage:
   file: claims.yml
