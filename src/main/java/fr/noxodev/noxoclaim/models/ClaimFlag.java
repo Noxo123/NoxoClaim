@@ -8,5 +8,6 @@ public enum ClaimFlag {
     MOB_GRIEFING,
     FLUIDS,
     PISTONS,
+    ENTITY_PROTECTION,
     ENTRY
 }
