@@ -34,9 +34,11 @@ public final class ClaimManager {
     public Claim get(UUID id) { return id == null ? null : claims.get(id); }
     public long revision() { return revision; }
 
+    /** Returns the claim containing the exact block, not merely the chunk containing it. */
     public Claim at(Location location) {
         if (location == null || location.getWorld() == null) return null;
-        return atChunk(location.getWorld().getName(), Math.floorDiv(location.getBlockX(), 16), Math.floorDiv(location.getBlockZ(), 16));
+        Claim candidate = atChunk(location.getWorld().getName(), Math.floorDiv(location.getBlockX(), 16), Math.floorDiv(location.getBlockZ(), 16));
+        return candidate != null && candidate.contains(location) ? candidate : null;
     }
 
     public Claim atChunk(String world, int chunkX, int chunkZ) {
@@ -110,7 +112,6 @@ public final class ClaimManager {
         if (claim.size() <= 0 || claim.chunkCount() <= 0) throw new IllegalArgumentException("Invalid claim size");
     }
 
-    /** Checks every target chunk before mutating either index, so a failed insertion leaves no partial state. */
     private void index(Claim c, Map<ChunkKey, Claim> targetChunks, Map<UUID, Set<UUID>> targetOwners) {
         int minX = Math.floorDiv(c.getMinX(), 16), maxX = Math.floorDiv(c.getMaxX(), 16);
         int minZ = Math.floorDiv(c.getMinZ(), 16), maxZ = Math.floorDiv(c.getMaxZ(), 16);
