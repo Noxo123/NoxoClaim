@@ -31,8 +31,6 @@ public final class HudEngineIntegration {
     public static final String HUD_KEY = "noxoclaim:minimap";
     private static final String HUD_ENGINE_PLUGIN = "HUDEngine";
     private static final String PROVIDER_CLASS = "io.github.nacvark.hudengine.api.HudEngineProvider";
-
-    // Keep the existing HUD and turn it into a real terrain/claim minimap instead of only showing claim cells.
     private static final int MAP_SIZE = 17;
     private static final int MAP_RADIUS = MAP_SIZE / 2;
     private static final int CELL_SIZE = 8;
@@ -86,8 +84,7 @@ public final class HudEngineIntegration {
                 return;
             }
             Class<?> providerClass = Class.forName(PROVIDER_CLASS, false, hudPlugin.getClass().getClassLoader());
-            Method findMethod = providerClass.getMethod("find");
-            Object result = findMethod.invoke(null);
+            Object result = providerClass.getMethod("find").invoke(null);
             if (!(result instanceof Optional<?> optional) || optional.isEmpty()) {
                 plugin.getLogger().warning("HUDEngine : fournisseur API introuvable.");
                 return;
@@ -162,29 +159,25 @@ public final class HudEngineIntegration {
         World world = player.getWorld();
         int centerChunkX = Math.floorDiv(location.getBlockX(), 16);
         int centerChunkZ = Math.floorDiv(location.getBlockZ(), 16);
-
         for (int screenZ = -MAP_RADIUS; screenZ <= MAP_RADIUS; screenZ++) {
             for (int screenX = -MAP_RADIUS; screenX <= MAP_RADIUS; screenX++) {
                 int[] relative = rotateRelative(screenX, screenZ, location.getYaw());
                 int chunkX = centerChunkX + relative[0];
                 int chunkZ = centerChunkZ + relative[1];
                 int index = (screenZ + MAP_RADIUS) * MAP_SIZE + (screenX + MAP_RADIUS);
-
                 Claim claim = plugin.claims().atChunk(world.getName(), chunkX, chunkZ);
                 if (claim != null) {
                     map[index] = claim.getOwner().equals(player.getUniqueId()) ? "6" : "7";
-                    continue;
+                } else {
+                    map[index] = terrainState(world, chunkX, chunkZ);
                 }
-                map[index] = terrainState(world, chunkX, chunkZ);
             }
         }
         return map;
     }
 
     private String terrainState(World world, int chunkX, int chunkZ) {
-        int blockX = chunkX * 16 + 8;
-        int blockZ = chunkZ * 16 + 8;
-        Material material = world.getHighestBlockAt(blockX, blockZ).getType();
+        Material material = world.getHighestBlockAt(chunkX * 16 + 8, chunkZ * 16 + 8).getType();
         if (material == Material.WATER || material == Material.KELP || material == Material.KELP_PLANT) return "1";
         if (material == Material.SAND || material == Material.RED_SAND || material == Material.SANDSTONE) return "2";
         if (material == Material.SNOW || material == Material.SNOW_BLOCK || material == Material.ICE || material == Material.PACKED_ICE) return "3";
@@ -195,9 +188,10 @@ public final class HudEngineIntegration {
 
     private int[] rotateRelative(int screenX, int screenZ, float yaw) {
         double radians = Math.toRadians(-yaw);
-        int worldX = (int) Math.round(screenX * Math.cos(radians) - screenZ * Math.sin(radians));
-        int worldZ = (int) Math.round(screenX * Math.sin(radians) + screenZ * Math.cos(radians));
-        return new int[]{worldX, worldZ};
+        return new int[]{
+                (int) Math.round(screenX * Math.cos(radians) - screenZ * Math.sin(radians)),
+                (int) Math.round(screenX * Math.sin(radians) + screenZ * Math.cos(radians))
+        };
     }
 
     private void refreshIfChanged(Player player) {
@@ -213,7 +207,6 @@ public final class HudEngineIntegration {
         refresh(player);
     }
 
-    /** Generates the existing HUD theme and minimap assets automatically in HUDEngine's data folder. */
     private void ensureMinimapAssets(Path hudEngineData) throws IOException {
         Path images = hudEngineData.resolve("images");
         Path layouts = hudEngineData.resolve("layouts");
@@ -311,36 +304,59 @@ public final class HudEngineIntegration {
 
     private void writeImageDefinitions(Path file) throws IOException {
         StringBuilder out = new StringBuilder();
-        out.append("noxoclaim-frame:\n  file: noxoclaim-frame.png\n  setting:\n    scale: 1\n\n");
-        out.append("noxoclaim-player:\n  file: noxoclaim-player.png\n  setting:\n    scale: 1\n\n");
+        out.append("noxoclaim-frame:\n");
+        out.append("  file: noxoclaim-frame.png\n");
+        out.append("  setting:\n    scale: 1\n\n");
+        out.append("noxoclaim-player:\n");
+        out.append("  file: noxoclaim-player.png\n");
+        out.append("  setting:\n    scale: 1\n\n");
         for (int z = -MAP_RADIUS; z <= MAP_RADIUS; z++) {
             for (int x = -MAP_RADIUS; x <= MAP_RADIUS; x++) {
-                out.append(imageKey(x, z)).append(":\n  file: noxoclaim-cell.png\n  type: listener\n  split: ").append(TERRAIN_STATES)
-                        .append("\n  split-type: left\n  setting:\n    scale: 1\n    listener:\n      value: \"").append(cellKey(x, z)
-                        .append("\"\n      max: \"").append(TERRAIN_STATES - 1).append("\"\n\n");
+                out.append(imageKey(x, z)).append(":\n");
+                out.append("  file: noxoclaim-cell.png\n");
+                out.append("  type: listener\n");
+                out.append("  split: ").append(TERRAIN_STATES).append("\n");
+                out.append("  split-type: left\n");
+                out.append("  setting:\n");
+                out.append("    scale: 1\n");
+                out.append("    listener:\n");
+                out.append("      value: \"").append(cellKey(x, z)).append("\"\n");
+                out.append("      max: ").append(TERRAIN_STATES - 1).append("\n\n");
             }
         }
         Files.writeString(file, out.toString());
     }
 
     private void writeLayout(Path file) throws IOException {
-        StringBuilder out = new StringBuilder("noxoclaim-minimap:\n  x: -190\n  y: 4\n  images:\n    1:\n      name: noxoclaim-frame\n      x: 0\n      y: 0\n      layer: 0\n");
+        StringBuilder out = new StringBuilder();
+        out.append("noxoclaim-minimap:\n");
+        out.append("  x: -190\n  y: 4\n  images:\n");
+        out.append("    1:\n      name: noxoclaim-frame\n      x: 0\n      y: 0\n      layer: 0\n");
         int imageId = 10;
         for (int z = -MAP_RADIUS; z <= MAP_RADIUS; z++) {
             for (int x = -MAP_RADIUS; x <= MAP_RADIUS; x++) {
-                out.append("    ").append(imageId++).append(":\n      name: ").append(imageKey(x, z))
-                        .append("\n      x: ").append(MAP_X + (x + MAP_RADIUS) * CELL_SIZE)
-                        .append("\n      y: ").append(MAP_Y + (z + MAP_RADIUS) * CELL_SIZE)
-                        .append("\n      layer: 1\n");
+                out.append("    ").append(imageId++).append(":\n");
+                out.append("      name: ").append(imageKey(x, z)).append("\n");
+                out.append("      x: ").append(MAP_X + (x + MAP_RADIUS) * CELL_SIZE).append("\n");
+                out.append("      y: ").append(MAP_Y + (z + MAP_RADIUS) * CELL_SIZE).append("\n");
+                out.append("      layer: 1\n");
             }
         }
-        out.append("    200:\n      name: noxoclaim-player\n      x: ").append(MAP_X + MAP_RADIUS * CELL_SIZE)
-                .append("\n      y: ").append(MAP_Y + MAP_RADIUS * CELL_SIZE).append("\n      layer: 3\n");
+        out.append("    200:\n      name: noxoclaim-player\n");
+        out.append("      x: ").append(MAP_X + MAP_RADIUS * CELL_SIZE).append("\n");
+        out.append("      y: ").append(MAP_Y + MAP_RADIUS * CELL_SIZE).append("\n");
+        out.append("      layer: 3\n");
         Files.writeString(file, out.toString());
     }
 
     private void writeHud(Path file) throws IOException {
-        Files.writeString(file, "noxoclaim:minimap:\n  layouts:\n    1:\n      name: noxoclaim-minimap\n      x: 99\n      y: 5\n");
+        Files.writeString(file,
+                "noxoclaim:minimap:\n" +
+                "  layouts:\n" +
+                "    1:\n" +
+                "      name: noxoclaim-minimap\n" +
+                "      x: 99\n" +
+                "      y: 5\n");
     }
 
     private static String cellKey(int x, int z) { return "noxoclaim:cell_" + (x + MAP_RADIUS) + "_" + (z + MAP_RADIUS); }
@@ -359,29 +375,62 @@ public final class HudEngineIntegration {
             if ("refresh".equals(action)) { invokePublicApi(controller, "refresh"); return; }
             invokePublicApi(controller, action, String.class, HUD_KEY);
             invokePublicApiQuietly(controller, "refresh");
-        } catch (Throwable throwable) { plugin.getLogger().fine("HUDEngine " + action + " impossible : " + rootMessage(throwable)); }
+        } catch (Throwable throwable) {
+            plugin.getLogger().fine("HUDEngine " + action + " impossible : " + rootMessage(throwable));
+        }
     }
 
-    private static boolean hasPublicApiMethod(Object target, String name, Class<?>... parameterTypes) { return findPublicApiMethod(target, name, parameterTypes) != null; }
+    private static boolean hasPublicApiMethod(Object target, String name, Class<?>... parameterTypes) {
+        return findPublicApiMethod(target, name, parameterTypes) != null;
+    }
+
     private static Method findPublicApiMethod(Object target, String name, Class<?>... parameterTypes) {
         if (target == null) return null;
         Method method = findInInterfaces(target.getClass(), name, parameterTypes);
         if (method != null) return method;
         Class<?> superclass = target.getClass().getSuperclass();
-        while (superclass != null) { method = findInInterfaces(superclass, name, parameterTypes); if (method != null) return method; superclass = superclass.getSuperclass(); }
-        return null;
-    }
-    private static Method findInInterfaces(Class<?> type, String name, Class<?>... parameterTypes) {
-        for (Class<?> interfaceClass : type.getInterfaces()) {
-            try { Method method = interfaceClass.getMethod(name, parameterTypes); if (Modifier.isPublic(interfaceClass.getModifiers())) return method; }
-            catch (NoSuchMethodException ignored) { }
-            Method nested = findInInterfaces(interfaceClass, name, parameterTypes); if (nested != null) return nested;
+        while (superclass != null) {
+            method = findInInterfaces(superclass, name, parameterTypes);
+            if (method != null) return method;
+            superclass = superclass.getSuperclass();
         }
         return null;
     }
-    private static Object invokePublicApi(Object target, String name, Class<?> parameterType, Object argument) throws Exception { Method method = findPublicApiMethod(target, name, parameterType); if (method == null) throw new NoSuchMethodException(name); return method.invoke(target, argument); }
-    private static Object invokePublicApi(Object target, String name) throws Exception { Method method = findPublicApiMethod(target, name); if (method == null) throw new NoSuchMethodException(name); return method.invoke(target); }
-    private static void invokePublicApiQuietly(Object target, String name) { try { invokePublicApi(target, name); } catch (Throwable ignored) { } }
-    private static String rootMessage(Throwable throwable) { Throwable current = throwable; while (current.getCause() != null) current = current.getCause(); String message = current.getMessage(); return message == null || message.isBlank() ? current.getClass().getSimpleName() : message; }
+
+    private static Method findInInterfaces(Class<?> type, String name, Class<?>... parameterTypes) {
+        for (Class<?> interfaceClass : type.getInterfaces()) {
+            try {
+                Method method = interfaceClass.getMethod(name, parameterTypes);
+                if (Modifier.isPublic(interfaceClass.getModifiers())) return method;
+            } catch (NoSuchMethodException ignored) { }
+            Method nested = findInInterfaces(interfaceClass, name, parameterTypes);
+            if (nested != null) return nested;
+        }
+        return null;
+    }
+
+    private static Object invokePublicApi(Object target, String name, Class<?> parameterType, Object argument) throws Exception {
+        Method method = findPublicApiMethod(target, name, parameterType);
+        if (method == null) throw new NoSuchMethodException(name);
+        return method.invoke(target, argument);
+    }
+
+    private static Object invokePublicApi(Object target, String name) throws Exception {
+        Method method = findPublicApiMethod(target, name);
+        if (method == null) throw new NoSuchMethodException(name);
+        return method.invoke(target);
+    }
+
+    private static void invokePublicApiQuietly(Object target, String name) {
+        try { invokePublicApi(target, name); } catch (Throwable ignored) { }
+    }
+
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) current = current.getCause();
+        String message = current.getMessage();
+        return message == null || message.isBlank() ? current.getClass().getSimpleName() : message;
+    }
+
     private record HudState(int chunkX, int chunkZ, int yawBucket, long revision) { }
 }
