@@ -13,6 +13,9 @@ permissions:
   security-events: write
   actions: read
 
+env:
+  GRADLE_VERSION: "9.7.0"
+
 jobs:
   gradle-dependencies:
     name: Gradle dependency verification
@@ -31,8 +34,11 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
-          gradle-version: "9.7.0"
-          validate-wrappers: true
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          validate-wrappers: false
+
+      - name: Verify Gradle version
+        run: gradle --version
 
       - name: Dependency report
         run: gradle --no-daemon dependencies --configuration runtimeClasspath
@@ -48,7 +54,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
+        uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
 
@@ -62,11 +68,14 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
-          gradle-version: "9.7.0"
-          validate-wrappers: true
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          validate-wrappers: false
+
+      - name: Verify Gradle version
+        run: gradle --version
 
       - name: Build
         run: gradle --no-daemon clean build -x test
 
       - name: Analyze
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
