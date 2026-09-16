@@ -96,8 +96,19 @@ public final class UpdateChecker {
                 if (Files.isRegularFile(pending)) {
                     String pendingCommit = Files.readString(pending).trim();
                     if (manifest.commit.equalsIgnoreCase(pendingCommit) && targetCommit == null) {
-                        report(sender, notifyConsole, "§e[NoxoClaim] Mise à jour §f" + shortSha(manifest.commit)
-                                + "§e déjà préparée dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
+                        Path pendingJar = updateDir.resolve("NoxoClaim.jar");
+                        if (PlugManHotReloader.isAvailable(plugin) && Files.isRegularFile(pendingJar)) {
+                            report(sender, true, "§b[NoxoClaim] Mise à jour déjà préparée : PlugMan détecté, tentative d'application à chaud...", false);
+                            if (PlugManHotReloader.reload(plugin, pendingJar)) {
+                                Files.deleteIfExists(pending);
+                                Bukkit.getLogger().info("[NoxoClaim] ✓ Mise à jour déjà préparée appliquée à chaud via PlugMan.");
+                                if (sender != null) sender.sendMessage("§a[NoxoClaim] ✓ Mise à jour appliquée à chaud via PlugMan.");
+                                return;
+                            }
+                        }
+                        report(sender, notifyConsole,
+                                "§e[NoxoClaim] Mise à jour §f" + shortSha(manifest.commit)
+                                        + "§e déjà préparée dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
                         return;
                     }
                     if (targetCommit == null || !manifest.commit.equalsIgnoreCase(targetCommit)) Files.deleteIfExists(pending);
