@@ -41,6 +41,9 @@ public final class ClaimVisualizer {
         double step = Math.max(2.0, plugin.getConfig().getDouble("effects.particles.step", 1.0));
         long interval = Math.max(4L, plugin.getConfig().getLong("effects.particles.interval-ticks", 10L));
         int duration = Math.max(1, durationTicks);
+        double configuredRadius = plugin.getConfig().getDouble("effects.particles.radius-view-distance", 64.0);
+        double radius = Math.max(8.0, Math.min(64.0, configuredRadius));
+        double radiusSquared = radius * radius;
 
         BukkitRunnable task = new BukkitRunnable() {
             int elapsed;
@@ -52,9 +55,13 @@ public final class ClaimVisualizer {
                     return;
                 }
 
-                int y = Math.max(player.getLocation().getBlockY(), world.getMinHeight() + 1);
+                Location playerLocation = player.getLocation();
+                int y = Math.max(playerLocation.getBlockY(), world.getMinHeight() + 1);
+                double playerX = playerLocation.getX();
+                double playerZ = playerLocation.getZ();
+
                 for (Claim claim : visible) {
-                    spawnBorder(world, particle, claim, y, step);
+                    spawnBorder(world, particle, claim, y, playerX, playerZ, radiusSquared, step);
                 }
                 elapsed += interval;
             }
@@ -64,7 +71,8 @@ public final class ClaimVisualizer {
         task.runTaskTimer(plugin, 0L, interval);
     }
 
-    private static void spawnBorder(World world, Particle particle, Claim claim, int y, double step) {
+    private static void spawnBorder(World world, Particle particle, Claim claim, int y,
+                                    double playerX, double playerZ, double radiusSquared, double step) {
         double minX = claim.getMinX() + 0.5;
         double maxX = claim.getMaxX() + 1.0 - 0.05;
         double minZ = claim.getMinZ() + 0.5;
@@ -72,13 +80,19 @@ public final class ClaimVisualizer {
         double py = y + 0.15;
 
         for (double x = minX; x <= maxX; x += step) {
-            spawn(world, particle, x, py, minZ);
-            spawn(world, particle, x, py, maxZ);
+            if (distanceSquared(x, minZ, playerX, playerZ) <= radiusSquared) spawn(world, particle, x, py, minZ);
+            if (distanceSquared(x, maxZ, playerX, playerZ) <= radiusSquared) spawn(world, particle, x, py, maxZ);
         }
         for (double z = minZ; z <= maxZ; z += step) {
-            spawn(world, particle, minX, py, z);
-            spawn(world, particle, maxX, py, z);
+            if (distanceSquared(minX, z, playerX, playerZ) <= radiusSquared) spawn(world, particle, minX, py, z);
+            if (distanceSquared(maxX, z, playerX, playerZ) <= radiusSquared) spawn(world, particle, maxX, py, z);
         }
+    }
+
+    private static double distanceSquared(double x1, double z1, double x2, double z2) {
+        double dx = x1 - x2;
+        double dz = z1 - z2;
+        return dx * dx + dz * dz;
     }
 
     public static void stop(Player player) {
