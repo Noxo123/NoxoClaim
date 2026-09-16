@@ -14,6 +14,7 @@ import org.bukkit.event.block.BlockFromToEvent;
 import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockSpreadEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
@@ -91,6 +92,12 @@ public final class ClaimProtectionListener implements Listener {
     public void burn(BlockBurnEvent event) {
         Claim claim = claimAt(event.getBlock().getLocation());
         if (claim != null && !claim.getFlag(ClaimFlag.FIRE)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void spread(BlockSpreadEvent event) {
+        Claim destination = claimAt(event.getBlock().getLocation());
+        if (destination != null && !destination.getFlag(ClaimFlag.FIRE)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
