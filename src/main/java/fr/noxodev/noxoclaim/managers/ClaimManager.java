@@ -68,56 +68,67 @@ public final class ClaimManager {
         if (claims.containsKey(claim.getId())) throw new IllegalArgumentException("Claim ID already exists");
         if (overlaps(claim)) throw new IllegalArgumentException("Claim overlaps an existing claim");
         claims.put(claim.getId(), claim);
-        index(claim);
+        index(claim, chunkIndex, ownerIndex);
         revision++;
         save();
     }
 
     public void remove(Claim claim) {
         if (claim == null || claims.remove(claim.getId()) == null) return;
-        unindex(claim);
+        unindex(claim, chunkIndex, ownerIndex);
         revision++;
         save();
     }
 
+    /** Rebuilds indexes in temporary maps and publishes them only if every claim is valid. */
     public void rebuildIndexes() {
-        chunkIndex.clear();
-        ownerIndex.clear();
+        Map<ChunkKey, Claim> newChunkIndex = new HashMap<>();
+        Map<UUID, Set<UUID>> newOwnerIndex = new HashMap<>();
+        List<UUID> invalid = new ArrayList<>();
+
         for (Claim claim : claims.values()) {
             try {
                 validateClaim(claim);
-                index(claim);
+                index(claim, newChunkIndex, newOwnerIndex);
             } catch (RuntimeException ex) {
+                invalid.add(claim.getId());
                 Bukkit.getLogger().warning("[NoxoClaim] Claim invalide ignoré lors de l'indexation: " + claim.getId() + " (" + ex.getMessage() + ")");
             }
         }
+
+        chunkIndex.clear();
+        chunkIndex.putAll(newChunkIndex);
+        ownerIndex.clear();
+        ownerIndex.putAll(newOwnerIndex);
+        if (!invalid.isEmpty()) Bukkit.getLogger().warning("[NoxoClaim] " + invalid.size() + " claim(s) n'ont pas été indexé(s).");
     }
 
     private void validateClaim(Claim claim) {
+        if (claim == null) throw new IllegalArgumentException("Claim is null");
         if (claim.getWorld().isBlank()) throw new IllegalArgumentException("Claim world is blank");
         if (claim.getMinX() > claim.getMaxX() || claim.getMinZ() > claim.getMaxZ()) throw new IllegalArgumentException("Invalid claim bounds");
         if (claim.size() <= 0 || claim.chunkCount() <= 0) throw new IllegalArgumentException("Invalid claim size");
     }
 
-    private void index(Claim c) {
-        ownerIndex.computeIfAbsent(c.getOwner(), k -> new HashSet<>()).add(c.getId());
+    private void index(Claim c, Map<ChunkKey, Claim> targetChunks, Map<UUID, Set<UUID>> targetOwners) {
+        targetOwners.computeIfAbsent(c.getOwner(), k -> new HashSet<>()).add(c.getId());
         int minX = Math.floorDiv(c.getMinX(), 16), maxX = Math.floorDiv(c.getMaxX(), 16);
         int minZ = Math.floorDiv(c.getMinZ(), 16), maxZ = Math.floorDiv(c.getMaxZ(), 16);
         for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) {
             ChunkKey key = new ChunkKey(c.getWorld(), x, z);
-            Claim previous = chunkIndex.putIfAbsent(key, c);
+            Claim previous = targetChunks.putIfAbsent(key, c);
             if (previous != null && !previous.getId().equals(c.getId())) {
                 throw new IllegalStateException("Overlapping claims detected while indexing: " + previous.getId() + " / " + c.getId());
             }
         }
     }
 
-    private void unindex(Claim c) {
+    private void unindex(Claim c, Map<ChunkKey, Claim> targetChunks, Map<UUID, Set<UUID>> targetOwners) {
         int minX = Math.floorDiv(c.getMinX(), 16), maxX = Math.floorDiv(c.getMaxX(), 16);
         int minZ = Math.floorDiv(c.getMinZ(), 16), maxZ = Math.floorDiv(c.getMaxZ(), 16);
-        for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) chunkIndex.remove(new ChunkKey(c.getWorld(), x, z), c);
-        Set<UUID> ids = ownerIndex.get(c.getOwner());
-        if (ids != null) { ids.remove(c.getId()); if (ids.isEmpty()) ownerIndex.remove(c.getOwner()); }
+        for (int x = minX; x <= maxX; x++) for (int z = minZ; z <= maxZ; z++) targetChunks.remove(new ChunkKey(c.getWorld(), x, z), c);
+        Set<UUID> ids = targetOwners.get(c.getOwner());
+        if (ids != null) { ids.remove(c.getId()); if (ids.isEmpty()) targetOwners.remove(c.getOwner()); }
     }
 
     private record ChunkKey(String world, int x, int z) {}
