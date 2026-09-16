@@ -1,6 +1,7 @@
 package fr.noxodev.noxoclaim.managers;
 
 import fr.noxodev.noxoclaim.models.*;
+import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
@@ -15,6 +16,7 @@ import java.util.*;
 /** High-performance claim registry with O(1) chunk lookups and atomic persistence. */
 public final class ClaimManager {
     private final File file;
+    private final File backupFile;
     private final Map<UUID, Claim> claims = new LinkedHashMap<>();
     private final Map<ChunkKey, Claim> chunkIndex = new HashMap<>();
     private final Map<UUID, Set<UUID>> ownerIndex = new HashMap<>();
@@ -23,6 +25,7 @@ public final class ClaimManager {
     public ClaimManager(File folder) {
         if (!folder.exists() && !folder.mkdirs()) throw new IllegalStateException("Unable to create claims folder");
         file = new File(folder, "claims.yml");
+        backupFile = new File(folder, "claims.yml.bak");
         load();
         rebuildIndexes();
     }
@@ -61,6 +64,7 @@ public final class ClaimManager {
 
     public void add(Claim claim) {
         Objects.requireNonNull(claim, "claim");
+        validateClaim(claim);
         if (claims.containsKey(claim.getId())) throw new IllegalArgumentException("Claim ID already exists");
         if (overlaps(claim)) throw new IllegalArgumentException("Claim overlaps an existing claim");
         claims.put(claim.getId(), claim);
@@ -79,7 +83,20 @@ public final class ClaimManager {
     public void rebuildIndexes() {
         chunkIndex.clear();
         ownerIndex.clear();
-        for (Claim claim : claims.values()) index(claim);
+        for (Claim claim : claims.values()) {
+            try {
+                validateClaim(claim);
+                index(claim);
+            } catch (RuntimeException ex) {
+                Bukkit.getLogger().warning("[NoxoClaim] Claim invalide ignoré lors de l'indexation: " + claim.getId() + " (" + ex.getMessage() + ")");
+            }
+        }
+    }
+
+    private void validateClaim(Claim claim) {
+        if (claim.getWorld().isBlank()) throw new IllegalArgumentException("Claim world is blank");
+        if (claim.getMinX() > claim.getMaxX() || claim.getMinZ() > claim.getMaxZ()) throw new IllegalArgumentException("Invalid claim bounds");
+        if (claim.size() <= 0 || claim.chunkCount() <= 0) throw new IllegalArgumentException("Invalid claim size");
     }
 
     private void index(Claim c) {
@@ -105,7 +122,7 @@ public final class ClaimManager {
 
     private record ChunkKey(String world, int x, int z) {}
 
-    public void save() {
+    public synchronized void save() {
         YamlConfiguration y = new YamlConfiguration();
         for (Claim c : claims.values()) {
             String p = "claims." + c.getId();
@@ -126,14 +143,15 @@ public final class ClaimManager {
         File temp = new File(file.getParentFile(), file.getName() + ".tmp");
         try {
             y.save(temp);
-            Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (IOException atomicFailure) {
+            if (file.isFile()) Files.copy(file.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
             try {
-                if (temp.isFile()) Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                else throw atomicFailure;
-            } catch (IOException fallbackFailure) {
-                throw new IllegalStateException("Unable to save claims.yml", fallbackFailure);
+                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (IOException atomicFailure) {
+                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
+        } catch (IOException failure) {
+            if (temp.isFile()) temp.delete();
+            throw new IllegalStateException("Unable to save claims.yml (backup: " + backupFile.getAbsolutePath() + ")", failure);
         }
     }
 
@@ -147,13 +165,15 @@ public final class ClaimManager {
                 UUID claimId = UUID.fromString(id);
                 String ownerValue = y.getString("claims." + id + ".owner");
                 String world = y.getString("claims." + id + ".world");
-                if (ownerValue == null || world == null || world.isBlank()) continue;
+                if (ownerValue == null || world == null || world.isBlank()) throw new IllegalArgumentException("missing owner/world");
                 String p = "claims." + id;
                 Claim c = new Claim(claimId, UUID.fromString(ownerValue), world,
                         y.getInt(p + ".minX"), y.getInt(p + ".minZ"), y.getInt(p + ".maxX"), y.getInt(p + ".maxZ"),
                         y.getString(p + ".name", "claim-" + id.substring(0, 8)));
                 for (String member : y.getStringList(p + ".members")) {
-                    try { c.addMember(UUID.fromString(member)); } catch (IllegalArgumentException ignored) { }
+                    try { c.addMember(UUID.fromString(member)); } catch (IllegalArgumentException ignored) {
+                        Bukkit.getLogger().warning("[NoxoClaim] UUID membre invalide dans le claim " + id + ": " + member);
+                    }
                 }
                 for (ClaimFlag flag : ClaimFlag.values()) {
                     String flagPath = p + ".flags." + flag.name().toLowerCase(Locale.ROOT);
@@ -161,12 +181,15 @@ public final class ClaimManager {
                     else if (y.contains(p + ".flags." + flag)) c.setFlag(flag, y.getBoolean(p + ".flags." + flag));
                 }
                 if (y.contains(p + ".home.x")) {
-                    World w = org.bukkit.Bukkit.getWorld(y.getString(p + ".home.world", c.getWorld()));
+                    World w = Bukkit.getWorld(y.getString(p + ".home.world", c.getWorld()));
                     if (w != null) c.setHome(new Location(w, y.getDouble(p + ".home.x"), y.getDouble(p + ".home.y"), y.getDouble(p + ".home.z"),
                             (float) y.getDouble(p + ".home.yaw"), (float) y.getDouble(p + ".home.pitch")));
                 }
+                validateClaim(c);
                 claims.put(c.getId(), c);
-            } catch (RuntimeException ignored) { }
+            } catch (RuntimeException ex) {
+                Bukkit.getLogger().warning("[NoxoClaim] Impossible de charger le claim " + id + ": " + ex.getMessage());
+            }
         }
     }
 }
