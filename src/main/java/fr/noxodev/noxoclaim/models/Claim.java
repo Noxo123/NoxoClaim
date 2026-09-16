@@ -11,6 +11,7 @@ public final class Claim {
     private final EnumMap<ClaimFlag, Boolean> flags = new EnumMap<>(ClaimFlag.class);
     private Location home;
     private String name;
+    private transient Runnable changeListener;
 
     public Claim(UUID id, UUID owner, String world, int x1, int z1, int x2, int z2) {
         this(id, owner, world, x1, z1, x2, z2, "claim-" + id.toString().substring(0, 8));
@@ -60,11 +61,42 @@ public final class Claim {
     public Set<UUID> getMembers() { return Collections.unmodifiableSet(members); }
     public EnumMap<ClaimFlag, Boolean> getFlags() { return new EnumMap<>(flags); }
     public boolean getFlag(ClaimFlag f) { return f != null && flags.getOrDefault(f, false); }
-    public void setFlag(ClaimFlag f, boolean v) { if (f != null) flags.put(f, v); }
-    public void addMember(UUID u) { if (u != null && !owner.equals(u)) members.add(u); }
-    public void removeMember(UUID u) { if (u != null) members.remove(u); }
+
+    public void setFlag(ClaimFlag f, boolean v) {
+        if (f == null || flags.getOrDefault(f, false) == v) return;
+        flags.put(f, v);
+        notifyChanged();
+    }
+
+    public void addMember(UUID u) {
+        if (u != null && !owner.equals(u) && members.add(u)) notifyChanged();
+    }
+
+    public void removeMember(UUID u) {
+        if (u != null && members.remove(u)) notifyChanged();
+    }
+
     public Location getHome() { return home == null ? null : home.clone(); }
-    public void setHome(Location l) { home = l == null ? null : l.clone(); }
+
+    public void setHome(Location l) {
+        home = l == null ? null : l.clone();
+        notifyChanged();
+    }
+
     public String getName() { return name; }
-    public void setName(String name) { if (name != null && !name.isBlank()) this.name = name.trim(); }
+
+    public void setName(String name) {
+        if (name == null || name.isBlank()) return;
+        String normalized = name.trim();
+        if (Objects.equals(this.name, normalized)) return;
+        this.name = normalized;
+        notifyChanged();
+    }
+
+    /** Internal hook used by ClaimManager to debounce persistence. */
+    public void setChangeListener(Runnable listener) { this.changeListener = listener; }
+
+    private void notifyChanged() {
+        if (changeListener != null) changeListener.run();
+    }
 }
