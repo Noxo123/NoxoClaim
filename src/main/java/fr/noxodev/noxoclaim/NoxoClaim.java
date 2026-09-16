@@ -35,7 +35,7 @@ public final class NoxoClaim extends JavaPlugin {
         saveDefaultConfig();
         File messagesFile = new File(getDataFolder(), "messages.yml");
         if (!messagesFile.isFile()) saveResource("messages.yml", false);
-        claims = new ClaimManager(getDataFolder());
+        claims = new ClaimManager(this, getDataFolder());
         messages = new MessageManager(getDataFolder());
         setupEconomy();
         detectPlugManX();
@@ -111,7 +111,7 @@ public final class NoxoClaim extends JavaPlugin {
     public ClaimMapIntegration mapIntegration() { return mapIntegration; }
     @Override public void onDisable() {
         if (hudEngine != null) hudEngine.stop();
-        if (claims != null) claims.save();
+        if (claims != null) claims.close();
         getLogger().info("NoxoClaim désactivé proprement.");
     }
 }
