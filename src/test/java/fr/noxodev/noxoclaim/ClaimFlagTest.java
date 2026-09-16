@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class ClaimFlagTest {
     @Test
     void t01Count() {
-        assertEquals(6, ClaimFlag.values().length);
+        assertEquals(8, ClaimFlag.values().length);
     }
 
     @Test
@@ -37,7 +37,17 @@ class ClaimFlagTest {
     }
 
     @Test
-    void t07Entry() {
+    void t07Pistons() {
+        assertNotNull(ClaimFlag.PISTONS);
+    }
+
+    @Test
+    void t08EntityProtection() {
+        assertNotNull(ClaimFlag.ENTITY_PROTECTION);
+    }
+
+    @Test
+    void t09Entry() {
         assertNotNull(ClaimFlag.ENTRY);
     }
 }
