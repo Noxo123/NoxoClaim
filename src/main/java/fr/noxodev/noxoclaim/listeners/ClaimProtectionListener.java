@@ -15,6 +15,8 @@ import org.bukkit.event.block.BlockIgniteEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockSpreadEvent;
+import org.bukkit.event.block.BlockPistonExtendEvent;
+import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
@@ -98,6 +100,27 @@ public final class ClaimProtectionListener implements Listener {
     public void spread(BlockSpreadEvent event) {
         Claim destination = claimAt(event.getBlock().getLocation());
         if (destination != null && !destination.getFlag(ClaimFlag.FIRE)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void pistonExtend(BlockPistonExtendEvent event) {
+        if (!pistonAllowed(event.getBlock().getLocation(), event.getBlocks())) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void pistonRetract(BlockPistonRetractEvent event) {
+        if (!pistonAllowed(event.getBlock().getLocation(), event.getBlocks())) event.setCancelled(true);
+    }
+
+    private boolean pistonAllowed(Location piston, java.util.List<org.bukkit.block.Block> movedBlocks) {
+        Claim pistonClaim = claimAt(piston);
+        if (pistonClaim != null && !pistonClaim.getFlag(ClaimFlag.PISTONS)) return false;
+        for (org.bukkit.block.Block block : movedBlocks) {
+            Claim destination = claimAt(block.getLocation());
+            if (destination != null && !destination.getFlag(ClaimFlag.PISTONS)) return false;
+            if (pistonClaim != null && destination != null && destination != pistonClaim) return false;
+        }
+        return true;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
