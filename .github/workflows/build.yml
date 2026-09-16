@@ -51,7 +51,7 @@ jobs:
       # --------------------------------------------------------
 
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
         with:
           fetch-depth: 0
@@ -62,7 +62,7 @@ jobs:
       # --------------------------------------------------------
 
       - name: Setup Java 25
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
 
         with:
           distribution: temurin
@@ -76,7 +76,7 @@ jobs:
       # --------------------------------------------------------
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
         with:
           gradle-version: "9.7.0"
@@ -195,7 +195,7 @@ jobs:
 
       - name: Upload update artifact
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
 
         with:
           name: NoxoClaim-${{ matrix.update-name }}
@@ -231,7 +231,7 @@ jobs:
       # --------------------------------------------------------
 
       - name: Checkout source
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
         with:
           fetch-depth: 1
@@ -242,7 +242,7 @@ jobs:
       # --------------------------------------------------------
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
 
         with:
           pattern: NoxoClaim-Paper-*
