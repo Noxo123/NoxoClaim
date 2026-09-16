@@ -130,6 +130,17 @@ public final class UpdateChecker {
                 downloadAndVerify(artifact, manifest.commit);
                 Files.createDirectories(updateDir);
                 Files.writeString(pending, manifest.commit);
+
+                if (PlugManHotReloader.isAvailable(plugin)) {
+                    report(sender, true, "§b[NoxoClaim] PlugMan détecté : tentative de mise à jour à chaud...", false);
+                    if (PlugManHotReloader.reload(plugin, updateDir.resolve("NoxoClaim.jar"))) {
+                        Files.deleteIfExists(pending);
+                        Bukkit.getLogger().info("[NoxoClaim] ✓ Mise à jour " + shortSha(manifest.commit) + " appliquée sans redémarrage via PlugMan.");
+                        if (sender != null) sender.sendMessage("§a[NoxoClaim] ✓ Mise à jour appliquée à chaud via PlugMan.");
+                        return;
+                    }
+                }
+
                 report(sender, true, "§a[NoxoClaim] ✓ Commit §f" + shortSha(manifest.commit)
                         + "§a vérifié et préparé dans plugins/update. Redémarrez le serveur pour l'appliquer.", false);
             } catch (Exception e) {
@@ -240,8 +251,11 @@ public final class UpdateChecker {
         StringBuilder result = new StringBuilder(64); for (byte b : digest.digest()) result.append(String.format("%02x", b)); return result.toString();
     }
     private void report(CommandSender sender, boolean console, String message, boolean warning) {
-        if (sender != null) Bukkit.getScheduler().runTask(plugin, () -> sender.sendMessage(message));
-        if (console) { String plain = message.replaceAll("§.", ""); if (warning) plugin.getLogger().warning(plain); else plugin.getLogger().info(plain); }
+        if (sender != null) {
+            if (plugin.isEnabled()) Bukkit.getScheduler().runTask(plugin, () -> sender.sendMessage(message));
+            else sender.sendMessage(message);
+        }
+        if (console) { String plain = message.replaceAll("§.", ""); if (warning) Bukkit.getLogger().warning(plain); else Bukkit.getLogger().info(plain); }
     }
     private static String shortSha(String sha) { return sha == null || sha.length() < 7 ? sha : sha.substring(0, 7); }
     private static String safeMessage(Exception e) { String message = e.getMessage(); return message == null || message.isBlank() ? e.getClass().getSimpleName() : message; }
