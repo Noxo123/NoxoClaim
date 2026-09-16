@@ -20,6 +20,8 @@ import org.bukkit.event.block.BlockPistonRetractEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.hanging.HangingBreakByEntityEvent;
+import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerBucketFillEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -42,6 +44,7 @@ public final class ClaimProtectionListener implements Listener {
     private boolean bypass(Player player) { return player.hasPermission("noxoclaim.bypass"); }
     private boolean protectedAgainst(Claim claim, Player player) { return claim != null && !bypass(player) && !claim.isMember(player.getUniqueId()); }
     private boolean blocksProtected() { return plugin.getConfig().getBoolean("claim.protection.blocks", true); }
+    private boolean entitiesProtected() { return plugin.getConfig().getBoolean("claim.protection.entities", true); }
     private boolean allowed(Player player, Location location) { return !blocksProtected() || !protectedAgainst(claimAt(location), player); }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
@@ -74,6 +77,27 @@ public final class ClaimProtectionListener implements Listener {
         if (!(event.getEntity() instanceof Player victim) || !(event.getDamager() instanceof Player attacker)) return;
         Claim claim = claimAt(victim.getLocation());
         if (claim != null && !claim.getFlag(ClaimFlag.PVP) && !bypass(attacker)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void entityDamage(EntityDamageByEntityEvent event) {
+        if (!entitiesProtected() || !(event.getDamager() instanceof Player attacker)) return;
+        Claim claim = claimAt(event.getEntity().getLocation());
+        if (protectedAgainst(claim, attacker) && !claim.getFlag(ClaimFlag.ENTITY_PROTECTION)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void hangingBreak(HangingBreakByEntityEvent event) {
+        if (!entitiesProtected() || !(event.getRemover() instanceof Player player)) return;
+        Claim claim = claimAt(event.getEntity().getLocation());
+        if (protectedAgainst(claim, player) && !claim.getFlag(ClaimFlag.ENTITY_PROTECTION)) event.setCancelled(true);
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void hangingPlace(HangingPlaceEvent event) {
+        if (!entitiesProtected()) return;
+        Claim claim = claimAt(event.getEntity().getLocation());
+        if (protectedAgainst(claim, event.getPlayer()) && !claim.getFlag(ClaimFlag.ENTITY_PROTECTION)) event.setCancelled(true);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
