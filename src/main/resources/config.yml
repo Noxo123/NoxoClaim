@@ -74,10 +74,17 @@ api:
   webhooks:
     enabled: false
     url: ""
-    # Secret sent as X-NoxoClaim-Webhook. Leave empty to disable signature header.
+    # Secret sent as X-NoxoClaim-Webhook for generic HTTP webhooks.
     secret: ""
     # HTTP webhooks are disabled by default. HTTPS is recommended.
     allow-http: false
+    discord:
+      enabled: false
+      # Paste your Discord webhook URL here. Do not commit a real secret URL publicly.
+      url: ""
+      username: "NoxoClaim"
+      avatar: ""
+      color: "5865F2"
 
 storage:
   file: claims.yml
