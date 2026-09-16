@@ -4,11 +4,13 @@ import fr.noxodev.noxoclaim.NoxoClaim;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 /** Optional PlugMan/PlugManX hot-reload bridge. No compile-time dependency is required. */
 public final class PlugManHotReloader {
@@ -37,11 +39,16 @@ public final class PlugManHotReloader {
 
     private static void perform(NoxoClaim plugin, Path downloadedJar, CompletableFuture<Boolean> result) {
         Path pluginJar = resolvePluginJar(plugin);
+        if (pluginJar == null) {
+            result.complete(false);
+            Bukkit.getLogger().warning("[NoxoClaim] Impossible de localiser le JAR actif de NoxoClaim.");
+            return;
+        }
+
         Path staged = pluginJar.resolveSibling(pluginJar.getFileName() + ".noxoclaim-new");
         Path backup = pluginJar.resolveSibling(pluginJar.getFileName() + ".noxoclaim-old");
 
         try {
-            if (pluginJar == null) throw new IllegalStateException("Impossible de localiser le JAR actif de NoxoClaim");
             Files.copy(downloadedJar, staged, StandardCopyOption.REPLACE_EXISTING);
 
             if (!dispatch("unload " + PLUGIN_NAME))
@@ -74,16 +81,24 @@ public final class PlugManHotReloader {
         try {
             Path dataFolder = plugin.getDataFolder().toPath().toAbsolutePath().normalize();
             Path pluginsDir = dataFolder.getParent();
-            if (pluginsDir == null) return null;
+            if (pluginsDir == null || !Files.isDirectory(pluginsDir)) return null;
+
             Path configuredJar = pluginsDir.resolve(plugin.getName() + ".jar");
             if (Files.isRegularFile(configuredJar)) return configuredJar;
-            Path[] candidates = Files.list(pluginsDir)
-                    .filter(Files::isRegularFile)
-                    .filter(path -> path.getFileName().toString().toLowerCase().startsWith(plugin.getName().toLowerCase() + "-"))
-                    .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".jar"))
-                    .toArray(Path[]::new);
-            return candidates.length == 0 ? null : candidates[0].toAbsolutePath().normalize();
-        } catch (Exception ignored) {
+
+            String prefix = plugin.getName().toLowerCase() + "-";
+            try (Stream<Path> paths = Files.list(pluginsDir)) {
+                return paths
+                        .filter(Files::isRegularFile)
+                        .filter(path -> {
+                            String name = path.getFileName().toString().toLowerCase();
+                            return name.startsWith(prefix) && name.endsWith(".jar");
+                        })
+                        .findFirst()
+                        .map(path -> path.toAbsolutePath().normalize())
+                        .orElse(null);
+            }
+        } catch (IOException ignored) {
             return null;
         }
     }
@@ -96,8 +111,8 @@ public final class PlugManHotReloader {
         }
         try {
             Files.deleteIfExists(staged);
-            if (pluginJar != null && Files.isRegularFile(backup)) {
-                Files.deleteIfExists(pluginJar);
+            if (Files.isRegularFile(backup)) {
+                if (pluginJar != null) Files.deleteIfExists(pluginJar);
                 Files.move(backup, pluginJar, StandardCopyOption.REPLACE_EXISTING);
                 dispatch("load " + PLUGIN_NAME);
             }
