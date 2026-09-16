@@ -22,10 +22,6 @@ public final class PlugManHotReloader {
         return findPlugMan() != null;
     }
 
-    /**
-     * Replaces the running JAR through PlugManX/PlugMan's supported unload/load commands.
-     * All Bukkit lifecycle operations are performed synchronously on the server thread.
-     */
     public static boolean reload(NoxoClaim plugin, Path downloadedJar) {
         if (!isAvailable(plugin) || !Files.isRegularFile(downloadedJar)) return false;
 
@@ -40,11 +36,12 @@ public final class PlugManHotReloader {
     }
 
     private static void perform(NoxoClaim plugin, Path downloadedJar, CompletableFuture<Boolean> result) {
-        Path pluginJar = plugin.getFile().toPath().toAbsolutePath().normalize();
+        Path pluginJar = resolvePluginJar(plugin);
         Path staged = pluginJar.resolveSibling(pluginJar.getFileName() + ".noxoclaim-new");
         Path backup = pluginJar.resolveSibling(pluginJar.getFileName() + ".noxoclaim-old");
 
         try {
+            if (pluginJar == null) throw new IllegalStateException("Impossible de localiser le JAR actif de NoxoClaim");
             Files.copy(downloadedJar, staged, StandardCopyOption.REPLACE_EXISTING);
 
             if (!dispatch("unload " + PLUGIN_NAME))
@@ -73,6 +70,24 @@ public final class PlugManHotReloader {
         }
     }
 
+    private static Path resolvePluginJar(NoxoClaim plugin) {
+        try {
+            Path dataFolder = plugin.getDataFolder().toPath().toAbsolutePath().normalize();
+            Path pluginsDir = dataFolder.getParent();
+            if (pluginsDir == null) return null;
+            Path configuredJar = pluginsDir.resolve(plugin.getName() + ".jar");
+            if (Files.isRegularFile(configuredJar)) return configuredJar;
+            Path[] candidates = Files.list(pluginsDir)
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().toLowerCase().startsWith(plugin.getName().toLowerCase() + "-"))
+                    .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".jar"))
+                    .toArray(Path[]::new);
+            return candidates.length == 0 ? null : candidates[0].toAbsolutePath().normalize();
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private static void restoreOld(Path pluginJar, Path backup, Path staged) {
         try {
             Plugin current = Bukkit.getPluginManager().getPlugin(PLUGIN_NAME);
@@ -81,7 +96,7 @@ public final class PlugManHotReloader {
         }
         try {
             Files.deleteIfExists(staged);
-            if (Files.isRegularFile(backup)) {
+            if (pluginJar != null && Files.isRegularFile(backup)) {
                 Files.deleteIfExists(pluginJar);
                 Files.move(backup, pluginJar, StandardCopyOption.REPLACE_EXISTING);
                 dispatch("load " + PLUGIN_NAME);
