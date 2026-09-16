@@ -6,6 +6,8 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.io.File;
 import java.io.IOException;
@@ -13,21 +15,31 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
 
-/** High-performance claim registry with O(1) chunk lookups and atomic persistence. */
+/** High-performance claim registry with O(1) chunk lookups and debounced atomic persistence. */
 public final class ClaimManager {
+    private static final long SAVE_DEBOUNCE_TICKS = 20L;
+
+    private final JavaPlugin plugin;
     private final File file;
     private final File backupFile;
     private final Map<UUID, Claim> claims = new LinkedHashMap<>();
     private final Map<ChunkKey, Claim> chunkIndex = new HashMap<>();
     private final Map<UUID, Set<UUID>> ownerIndex = new HashMap<>();
-    private long revision;
+    private final Object ioLock = new Object();
 
-    public ClaimManager(File folder) {
+    private long revision;
+    private volatile long savedRevision;
+    private volatile BukkitTask scheduledSave;
+    private volatile boolean closed;
+
+    public ClaimManager(JavaPlugin plugin, File folder) {
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
         if (!folder.exists() && !folder.mkdirs()) throw new IllegalStateException("Unable to create claims folder");
         file = new File(folder, "claims.yml");
         backupFile = new File(folder, "claims.yml.bak");
         load();
         rebuildIndexes();
+        savedRevision = revision;
     }
 
     public Collection<Claim> all() { return Collections.unmodifiableCollection(new ArrayList<>(claims.values())); }
@@ -65,21 +77,23 @@ public final class ClaimManager {
     }
 
     public void add(Claim claim) {
+        ensureOpen();
         Objects.requireNonNull(claim, "claim");
         validateClaim(claim);
         if (claims.containsKey(claim.getId())) throw new IllegalArgumentException("Claim ID already exists");
         if (overlaps(claim)) throw new IllegalArgumentException("Claim overlaps an existing claim");
         claims.put(claim.getId(), claim);
+        claim.setChangeListener(this::onClaimChanged);
         index(claim, chunkIndex, ownerIndex);
-        revision++;
-        save();
+        markChanged();
     }
 
     public void remove(Claim claim) {
+        ensureOpen();
         if (claim == null || claims.remove(claim.getId()) == null) return;
+        claim.setChangeListener(null);
         unindex(claim, chunkIndex, ownerIndex);
-        revision++;
-        save();
+        markChanged();
     }
 
     /** Rebuilds indexes in temporary maps and publishes them only after validation. */
@@ -92,6 +106,7 @@ public final class ClaimManager {
             try {
                 validateClaim(claim);
                 index(claim, newChunkIndex, newOwnerIndex);
+                claim.setChangeListener(this::onClaimChanged);
             } catch (RuntimeException ex) {
                 invalid.add(claim.getId());
                 Bukkit.getLogger().warning("[NoxoClaim] Claim invalide ignoré lors de l'indexation: " + claim.getId() + " (" + ex.getMessage() + ")");
@@ -136,36 +151,117 @@ public final class ClaimManager {
 
     private record ChunkKey(String world, int x, int z) {}
 
-    public synchronized void save() {
-        YamlConfiguration y = new YamlConfiguration();
+    private record ClaimSnapshot(UUID id, UUID owner, String name, String world, int minX, int minZ, int maxX, int maxZ,
+                                 List<UUID> members, EnumMap<ClaimFlag, Boolean> flags, HomeSnapshot home) {}
+
+    private record HomeSnapshot(String world, double x, double y, double z, float yaw, float pitch) {}
+
+    private List<ClaimSnapshot> snapshotClaims() {
+        List<ClaimSnapshot> snapshot = new ArrayList<>(claims.size());
         for (Claim c : claims.values()) {
-            String p = "claims." + c.getId();
-            y.set(p + ".owner", c.getOwner().toString());
-            y.set(p + ".name", c.getName());
-            y.set(p + ".world", c.getWorld());
-            y.set(p + ".minX", c.getMinX()); y.set(p + ".minZ", c.getMinZ());
-            y.set(p + ".maxX", c.getMaxX()); y.set(p + ".maxZ", c.getMaxZ());
-            y.set(p + ".members", c.getMembers().stream().map(UUID::toString).toList());
-            for (var entry : c.getFlags().entrySet()) y.set(p + ".flags." + entry.getKey().name().toLowerCase(Locale.ROOT), entry.getValue());
             Location h = c.getHome();
-            if (h != null) {
-                y.set(p + ".home.world", h.getWorld() == null ? c.getWorld() : h.getWorld().getName());
-                y.set(p + ".home.x", h.getX()); y.set(p + ".home.y", h.getY()); y.set(p + ".home.z", h.getZ());
-                y.set(p + ".home.yaw", h.getYaw()); y.set(p + ".home.pitch", h.getPitch());
-            }
+            HomeSnapshot home = h == null ? null : new HomeSnapshot(
+                    h.getWorld() == null ? c.getWorld() : h.getWorld().getName(),
+                    h.getX(), h.getY(), h.getZ(), h.getYaw(), h.getPitch());
+            snapshot.add(new ClaimSnapshot(c.getId(), c.getOwner(), c.getName(), c.getWorld(),
+                    c.getMinX(), c.getMinZ(), c.getMaxX(), c.getMaxZ(),
+                    List.copyOf(c.getMembers()), c.getFlags(), home));
         }
-        File temp = new File(file.getParentFile(), file.getName() + ".tmp");
-        try {
-            y.save(temp);
-            if (file.isFile()) Files.copy(file.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        return List.copyOf(snapshot);
+    }
+
+    private void onClaimChanged() {
+        if (closed) return;
+        markChanged();
+    }
+
+    private void markChanged() {
+        revision++;
+        scheduleSave();
+    }
+
+    private synchronized void scheduleSave() {
+        if (closed || !plugin.isEnabled()) return;
+        if (scheduledSave != null) scheduledSave.cancel();
+        List<ClaimSnapshot> snapshot = snapshotClaims();
+        long targetRevision = revision;
+        scheduledSave = Bukkit.getScheduler().runTaskLaterAsynchronously(plugin, () -> {
             try {
-                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicFailure) {
-                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                writeSnapshot(snapshot);
+                savedRevision = Math.max(savedRevision, targetRevision);
+            } catch (RuntimeException ex) {
+                plugin.getLogger().severe("Impossible de sauvegarder claims.yml en arrière-plan: " + ex.getMessage());
+            } finally {
+                synchronized (ClaimManager.this) {
+                    scheduledSave = null;
+                    if (!closed && revision > targetRevision) scheduleSave();
+                }
             }
-        } catch (IOException failure) {
-            if (temp.isFile()) temp.delete();
-            throw new IllegalStateException("Unable to save claims.yml (backup: " + backupFile.getAbsolutePath() + ")", failure);
+        }, SAVE_DEBOUNCE_TICKS);
+    }
+
+    /** Flushes the latest state synchronously. Intended for plugin shutdown. */
+    public void save() {
+        List<ClaimSnapshot> snapshot;
+        long targetRevision;
+        synchronized (this) {
+            if (scheduledSave != null) {
+                scheduledSave.cancel();
+                scheduledSave = null;
+            }
+            snapshot = snapshotClaims();
+            targetRevision = revision;
+        }
+        writeSnapshot(snapshot);
+        savedRevision = targetRevision;
+    }
+
+    public synchronized void close() {
+        if (closed) return;
+        closed = true;
+        if (scheduledSave != null) {
+            scheduledSave.cancel();
+            scheduledSave = null;
+        }
+        save();
+        for (Claim claim : claims.values()) claim.setChangeListener(null);
+    }
+
+    public boolean isDirty() { return revision != savedRevision; }
+
+    private void writeSnapshot(List<ClaimSnapshot> snapshot) {
+        synchronized (ioLock) {
+            YamlConfiguration y = new YamlConfiguration();
+            for (ClaimSnapshot c : snapshot) {
+                String p = "claims." + c.id();
+                y.set(p + ".owner", c.owner().toString());
+                y.set(p + ".name", c.name());
+                y.set(p + ".world", c.world());
+                y.set(p + ".minX", c.minX()); y.set(p + ".minZ", c.minZ());
+                y.set(p + ".maxX", c.maxX()); y.set(p + ".maxZ", c.maxZ());
+                y.set(p + ".members", c.members().stream().map(UUID::toString).toList());
+                for (var entry : c.flags().entrySet()) y.set(p + ".flags." + entry.getKey().name().toLowerCase(Locale.ROOT), entry.getValue());
+                HomeSnapshot h = c.home();
+                if (h != null) {
+                    y.set(p + ".home.world", h.world());
+                    y.set(p + ".home.x", h.x()); y.set(p + ".home.y", h.y()); y.set(p + ".home.z", h.z());
+                    y.set(p + ".home.yaw", h.yaw()); y.set(p + ".home.pitch", h.pitch());
+                }
+            }
+
+            File temp = new File(file.getParentFile(), file.getName() + ".tmp");
+            try {
+                y.save(temp);
+                if (file.isFile()) Files.copy(file.toPath(), backupFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                try {
+                    Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException atomicFailure) {
+                    Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (IOException failure) {
+                if (temp.isFile()) temp.delete();
+                throw new IllegalStateException("Unable to save claims.yml (backup: " + backupFile.getAbsolutePath() + ")", failure);
+            }
         }
     }
 
@@ -205,5 +301,9 @@ public final class ClaimManager {
                 Bukkit.getLogger().warning("[NoxoClaim] Impossible de charger le claim " + id + ": " + ex.getMessage());
             }
         }
+    }
+
+    private void ensureOpen() {
+        if (closed) throw new IllegalStateException("ClaimManager is closed");
     }
 }
