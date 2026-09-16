@@ -31,6 +31,8 @@ public final class Claim {
         flags.put(ClaimFlag.FIRE, false);
         flags.put(ClaimFlag.MOB_GRIEFING, false);
         flags.put(ClaimFlag.FLUIDS, false);
+        flags.put(ClaimFlag.PISTONS, false);
+        flags.put(ClaimFlag.ENTITY_PROTECTION, false);
         flags.put(ClaimFlag.ENTRY, true);
     }
 
