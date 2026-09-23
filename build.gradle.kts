@@ -1,6 +1,6 @@
 plugins {
     java
-    id("com.gradleup.shadow") version "8.3.9"
+    id("com.gradleup.shadow") version "9.6.1"
 }
 
 group = "fr.noxodev"
@@ -29,8 +29,8 @@ dependencies {
 
     compileOnly("io.github.nacvark:hudengine-api:1.0.0")
 
-    testImplementation("org.junit.jupiter:junit-jupiter:5.12.2")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.12.2")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.3")
 }
 
 java {
